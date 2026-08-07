@@ -4,25 +4,44 @@ import { PaginatedResponse } from "../users/users.service.js";
 
 let tableInitialized = false;
 
+async function ensureTaskTableSchema() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+      user_id VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      deleted_at TIMESTAMP WITH TIME ZONE,
+      deleted_by VARCHAR(255)
+    );
+  `);
+
+  await pool.query(`
+    ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE,
+    ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(255);
+  `);
+
+  await pool.query(`
+    UPDATE tasks
+    SET created_at = COALESCE(created_at, CURRENT_TIMESTAMP),
+        updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)
+    WHERE created_at IS NULL OR updated_at IS NULL;
+  `);
+}
+
 /**
  * Service Helper: Ensures the 'tasks' table exists in PostgreSQL database.
  */
 export async function initTasksTable() {
   if (tableInitialized) return;
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS tasks (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        title VARCHAR(255) NOT NULL,
-        description TEXT,
-        status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
-        user_id VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        deleted_at TIMESTAMP WITH TIME ZONE,
-        deleted_by VARCHAR(255)
-      );
-    `);
+    await ensureTaskTableSchema();
     tableInitialized = true;
   } catch (err: any) {
     console.error("Tasks table initialization error:", err.message);
