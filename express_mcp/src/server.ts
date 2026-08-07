@@ -3,7 +3,11 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { setupSwagger } from "./swagger.js";
 import cors from "cors";
 import { processChat } from "./llm.js";
-import { authMiddleware, optionalAuthMiddleware, AuthenticatedRequest } from "./middleware/auth.middleware.js";
+import {
+  authMiddleware,
+  optionalAuthMiddleware,
+  AuthenticatedRequest,
+} from "./middleware/auth.middleware.js";
 import { errorHandlerMiddleware } from "./middleware/error-handler.middleware.js";
 import { apiRouter } from "./modules/index.js";
 import { createMcpServer } from "./mcp/mcp.server.js";
@@ -60,36 +64,48 @@ app.delete("/mcp", methodNotAllowed);
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 // Global Public Chat (Works with or without JWT bearer token)
-app.post("/api/chat", optionalAuthMiddleware, async (req: AuthenticatedRequest, res) => {
-  const { message } = req.body;
-  if (typeof message !== "string")
-    return res.json({ error: "Invalid message format" });
+app.post(
+  "/api/chat",
+  optionalAuthMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    const { message } = req.body;
+    if (typeof message !== "string")
+      return res.json({ error: "Invalid message format" });
 
-  try {
-    const userServer = createMcpServer(req.user);
-    const tools = (userServer as any)._registeredTools;
-    const aiResponse = await processChat(message, tools);
-    res.json({ content: [{ type: "text", text: aiResponse }] });
-  } catch (err: any) {
-    res.json({ error: `AI Error: ${err.message}` });
-  }
-});
+    try {
+      const userServer = createMcpServer(req.user);
+      const tools = (userServer as any)._registeredTools;
+      const aiResponse = await processChat(message, tools, {
+        userId: req.user?.userId,
+      });
+      res.json({ content: [{ type: "text", text: aiResponse }] });
+    } catch (err: any) {
+      res.json({ error: `AI Error: ${err.message}` });
+    }
+  },
+);
 
 // Authenticated User Chat (Requires valid Bearer JWT token)
-app.post("/api/chat/authenticated", authMiddleware, async (req: AuthenticatedRequest, res) => {
-  const { message } = req.body;
-  if (typeof message !== "string")
-    return res.json({ error: "Invalid message format" });
+app.post(
+  "/api/chat/authenticated",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    const { message } = req.body;
+    if (typeof message !== "string")
+      return res.json({ error: "Invalid message format" });
 
-  try {
-    const userServer = createMcpServer(req.user);
-    const tools = (userServer as any)._registeredTools;
-    const aiResponse = await processChat(message, tools);
-    res.json({ content: [{ type: "text", text: aiResponse }] });
-  } catch (err: any) {
-    res.json({ error: `AI Error: ${err.message}` });
-  }
-});
+    try {
+      const userServer = createMcpServer(req.user);
+      const tools = (userServer as any)._registeredTools;
+      const aiResponse = await processChat(message, tools, {
+        userId: req.user?.userId,
+      });
+      res.json({ content: [{ type: "text", text: aiResponse }] });
+    } catch (err: any) {
+      res.json({ error: `AI Error: ${err.message}` });
+    }
+  },
+);
 
 const swaggerServer = createMcpServer();
 setupSwagger(app, swaggerServer);

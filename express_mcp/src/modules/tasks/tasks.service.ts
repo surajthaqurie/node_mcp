@@ -18,7 +18,9 @@ export async function initTasksTable() {
         status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
         user_id VARCHAR(255) NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TIMESTAMP WITH TIME ZONE,
+        deleted_by VARCHAR(255)
       );
     `);
     tableInitialized = true;
@@ -42,7 +44,7 @@ export async function createTask(data: {
     `INSERT INTO tasks (title, description, status, user_id)
      VALUES ($1, $2, $3, $4)
      RETURNING id, title, description, status, user_id AS "userId", created_at AS "createdAt", updated_at AS "updatedAt"`,
-    [data.title, data.description || null, status, data.userId]
+    [data.title, data.description || null, status, data.userId],
   );
   return result.rows[0];
 }
@@ -54,14 +56,14 @@ export async function getTasks(
   userId: string,
   status?: string,
   page: number = 1,
-  limit: number = 10
+  limit: number = 10,
 ): Promise<PaginatedResponse<TaskRecord>> {
   await initTasksTable();
   const safePage = Math.max(1, page);
   const safeLimit = Math.max(1, Math.min(100, limit));
   const offset = (safePage - 1) * safeLimit;
 
-  let countQuery = `SELECT COUNT(*) FROM tasks WHERE user_id = $1`;
+  let countQuery = `SELECT COUNT(*) FROM tasks WHERE user_id = $1 AND deleted_at IS NULL`;
   const countParams: any[] = [userId];
   if (status) {
     countQuery += ` AND status = $2`;
@@ -71,7 +73,7 @@ export async function getTasks(
   const total = parseInt(countResult.rows[0].count, 10);
   const totalPages = Math.ceil(total / safeLimit) || 1;
 
-  let dataQuery = `SELECT id, title, description, status, user_id AS "userId", created_at AS "createdAt", updated_at AS "updatedAt" FROM tasks WHERE user_id = $1`;
+  let dataQuery = `SELECT id, title, description, status, user_id AS "userId", created_at AS "createdAt", updated_at AS "updatedAt" FROM tasks WHERE user_id = $1 AND deleted_at IS NULL`;
   const dataParams: any[] = [userId];
 
   if (status) {
@@ -97,14 +99,18 @@ export async function getTasks(
 /**
  * Service: Updates status of a task for a given user.
  */
-export async function updateTaskStatus(id: string, status: string, userId: string): Promise<TaskRecord | null> {
+export async function updateTaskStatus(
+  id: string,
+  status: string,
+  userId: string,
+): Promise<TaskRecord | null> {
   await initTasksTable();
   const result = await pool.query(
     `UPDATE tasks
      SET status = $1, updated_at = CURRENT_TIMESTAMP
-     WHERE id = $2 AND user_id = $3
+     WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL
      RETURNING id, title, description, status, user_id AS "userId", created_at AS "createdAt", updated_at AS "updatedAt"`,
-    [status, id, userId]
+    [status, id, userId],
   );
   return result.rows[0] || null;
 }
@@ -115,8 +121,43 @@ export async function updateTaskStatus(id: string, status: string, userId: strin
 export async function deleteTask(id: string, userId: string): Promise<boolean> {
   await initTasksTable();
   const result = await pool.query(
-    `DELETE FROM tasks WHERE id = $1 AND user_id = $2`,
-    [id, userId]
+    `UPDATE tasks
+     SET deleted_at = CURRENT_TIMESTAMP,
+         deleted_by = $2,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
+    [id, userId],
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Service: Aggregates task counts by user for admin-style reporting.
+ */
+export async function getTaskCountsByUser(): Promise<
+  Array<{ userId: string; taskCount: number }>
+> {
+  await initTasksTable();
+  const result = await pool.query(
+    `SELECT user_id AS "userId", COUNT(*)::int AS "taskCount"
+     FROM tasks
+     WHERE deleted_at IS NULL
+     GROUP BY user_id
+     ORDER BY "taskCount" DESC, "userId" ASC`,
+  );
+  return result.rows;
+}
+
+export async function getDeletedTaskCountsByUser(): Promise<
+  Array<{ userId: string; deletedTaskCount: number }>
+> {
+  await initTasksTable();
+  const result = await pool.query(
+    `SELECT user_id AS "userId", COUNT(*)::int AS "deletedTaskCount"
+     FROM tasks
+     WHERE deleted_at IS NOT NULL
+     GROUP BY user_id
+     ORDER BY "deletedTaskCount" DESC, "userId" ASC`,
+  );
+  return result.rows;
 }

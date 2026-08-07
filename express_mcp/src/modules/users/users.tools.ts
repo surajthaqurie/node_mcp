@@ -6,15 +6,23 @@ import { AuthUser } from "../auth/auth.dto.js";
 /**
  * Helper to format user list into a Markdown Table response.
  */
-function formatUsersTable(data: any[], pagination: any): string {
+function formatUsersTable(
+  data: any[],
+  pagination: any,
+  query?: string,
+  searchBy?: string,
+): string {
   if (data.length === 0) return "No users found.";
 
-  const header = `### 👥 Users List (Page ${pagination.page} of ${pagination.totalPages} | Total: ${pagination.total})\n\n`;
+  const searchText = query
+    ? ` | Search: ${query}${searchBy ? ` (${searchBy})` : ""}`
+    : "";
+  const header = `### 👥 Users List (Page ${pagination.page} of ${pagination.totalPages} | Total: ${pagination.total}${searchText})\n\n`;
   const tableHeader = `| ID | Name | Email | Role | Created At |\n| :--- | :--- | :--- | :--- | :--- |\n`;
   const tableRows = data
     .map(
       (u) =>
-        `| \`${u.id}\` | **${u.name}** | \`${u.email}\` | \`${u.role || "user"}\` | ${new Date(u.created_at || u.createdAt).toLocaleDateString()} |`
+        `| \`${u.id}\` | **${u.name}** | \`${u.email}\` | \`${u.role || "user"}\` | ${new Date(u.created_at || u.createdAt).toLocaleDateString()} |`,
     )
     .join("\n");
 
@@ -32,15 +40,29 @@ export function registerUserTools(server: McpServer, user?: AuthUser) {
       title: "Add User",
       description: "Add / Create a new user in the database",
       inputSchema: {
-        name: z.string().min(1, "Name is required").describe("User's full name"),
-        email: z.string().email("Invalid email format").describe("User's email address"),
-        role: z.string().optional().describe("User role (e.g. 'user', 'admin')"),
+        name: z
+          .string()
+          .min(1, "Name is required")
+          .describe("User's full name"),
+        email: z
+          .string()
+          .email("Invalid email format")
+          .describe("User's email address"),
+        role: z
+          .string()
+          .optional()
+          .describe("User role (e.g. 'user', 'admin')"),
       },
     },
     async ({ name, email, role }) => {
       if (!user || user.role === "guest") {
         return {
-          content: [{ type: "text", text: "Unauthorized: You must be logged in to create user records. Please authenticate first." }],
+          content: [
+            {
+              type: "text",
+              text: "Unauthorized: You must be logged in to create user records. Please authenticate first.",
+            },
+          ],
         };
       }
 
@@ -63,7 +85,7 @@ export function registerUserTools(server: McpServer, user?: AuthUser) {
           content: [{ type: "text", text: errorMessage }],
         };
       }
-    }
+    },
   );
 
   // 2. Get User By ID Tool (Requires Authentication)
@@ -77,7 +99,12 @@ export function registerUserTools(server: McpServer, user?: AuthUser) {
     async ({ id }) => {
       if (!user || user.role === "guest") {
         return {
-          content: [{ type: "text", text: "Unauthorized: You must be logged in to view user records. Please authenticate first." }],
+          content: [
+            {
+              type: "text",
+              text: "Unauthorized: You must be logged in to view user records. Please authenticate first.",
+            },
+          ],
         };
       }
 
@@ -87,14 +114,16 @@ export function registerUserTools(server: McpServer, user?: AuthUser) {
           return { content: [{ type: "text", text: "User not found" }] };
         }
         return {
-          content: [{ type: "text", text: JSON.stringify(userRecord, null, 2) }],
+          content: [
+            { type: "text", text: JSON.stringify(userRecord, null, 2) },
+          ],
         };
       } catch (err: any) {
         return {
           content: [{ type: "text", text: `Database error: ${err.message}` }],
         };
       }
-    }
+    },
   );
 
   // 3. Get All Users Tool (Paginated & Markdown Table Response)
@@ -102,22 +131,42 @@ export function registerUserTools(server: McpServer, user?: AuthUser) {
     "get_all_users",
     {
       title: "Get all users",
-      description: "Fetch paginated users table from the database (Requires authentication)",
+      description:
+        "Fetch paginated users table from the database (Requires authentication)",
       inputSchema: {
         page: z.number().optional().describe("Page number (default: 1)"),
         limit: z.number().optional().describe("Items per page (default: 10)"),
+        query: z
+          .string()
+          .optional()
+          .describe("Filter users by name or email text"),
+        searchBy: z
+          .enum(["name", "email", "all"])
+          .optional()
+          .describe("Search scope: name, email, or both"),
       },
     },
-    async ({ page = 1, limit = 10 }) => {
+    async ({ page = 1, limit = 10, query, searchBy = "all" }) => {
       if (!user || user.role === "guest") {
         return {
-          content: [{ type: "text", text: "Unauthorized: You must be logged in to view user records. Please authenticate first." }],
+          content: [
+            {
+              type: "text",
+              text: "Unauthorized: You must be logged in to view user records. Please authenticate first.",
+            },
+          ],
         };
       }
 
       try {
-        const result = await getAllUsers(page, limit);
-        const markdownTable = formatUsersTable(result.data, result.pagination);
+        const result = await getAllUsers(page, limit, query, searchBy);
+        const paginationHint =
+          result.pagination.page < result.pagination.totalPages
+            ? `\n\nType "next" to view page ${result.pagination.page + 1}.`
+            : "";
+        const markdownTable =
+          formatUsersTable(result.data, result.pagination, query, searchBy) +
+          paginationHint;
         return {
           content: [{ type: "text", text: markdownTable }],
         };
@@ -126,6 +175,6 @@ export function registerUserTools(server: McpServer, user?: AuthUser) {
           content: [{ type: "text", text: `Database error: ${err.message}` }],
         };
       }
-    }
+    },
   );
 }
