@@ -218,7 +218,7 @@ export async function processChat(
         sessionKey,
       );
       const summary = getUsageSummary(sessionKey, message, response);
-      return `${response}\n\n[Estimated usage: ${summary.usage.totalTokens}/${summary.limit} tokens | remaining: ${summary.remaining}]`;
+      return `[Usage: ${summary.usage.totalTokens}/${summary.limit} tokens | remaining: ${summary.remaining}]\n\n${response}`;
     } catch (err: any) {
       console.warn("Gemini failed, falling back to Ollama:", err.message);
       try {
@@ -243,7 +243,7 @@ export async function processChat(
       sessionKey,
     );
     const summary = getUsageSummary(sessionKey, message, response);
-    return `${response}\n\n[Estimated usage: ${summary.usage.totalTokens}/${summary.limit} tokens | remaining: ${summary.remaining}]`;
+    return `[Usage: ${summary.usage.totalTokens}/${summary.limit} tokens | remaining: ${summary.remaining}]\n\n${response}`;
   }
 }
 
@@ -264,8 +264,9 @@ CRITICAL RULES:
 1. IF the user asks to list users, view users, show users, or mentions user listing (e.g., "list users", "give me the list of users", "I need to list the users", "show users"), YOU MUST IMMEDIATELY CALL THE 'get_all_users' TOOL. DO NOT ask for user IDs or names for a list request.
 2. If the user says "next", "next page", "continue", or "show more" after a user list, call the 'get_all_users' tool again with the next page number and preserve any search query.
 3. IF the user asks to list tasks or view tasks, YOU MUST IMMEDIATELY CALL THE 'list_tasks' TOOL.
-4. ONLY ask clarifying questions if creating/updating a specific record and missing required parameters.
-5. Always invoke tool calls directly instead of explaining what you need.`;
+4. If the user asks for task statistics, counts, summaries, deleted-task counts, or admin dashboard info, call the relevant reporting tools such as 'get_task_counts_by_user' or 'get_deleted_task_counts_by_user'.
+5. ONLY ask clarifying questions if creating/updating a specific record and missing required parameters.
+6. Always invoke tool calls directly instead of explaining what you need.`;
 }
 
 async function processWithGemini(
@@ -435,6 +436,18 @@ async function processWithOllama(
       (lower.includes("user") || lower.includes("users"))
     ) {
       fallbackTool = "get_all_users";
+    } else if (
+      (lower.includes("task") || lower.includes("tasks")) &&
+      (lower.includes("count") ||
+        lower.includes("counts") ||
+        lower.includes("stats") ||
+        lower.includes("summary") ||
+        lower.includes("dashboard") ||
+        lower.includes("deleted"))
+    ) {
+      fallbackTool = lower.includes("deleted")
+        ? "get_deleted_task_counts_by_user"
+        : "get_task_counts_by_user";
     } else if (
       (lower.includes("list") ||
         lower.includes("show") ||

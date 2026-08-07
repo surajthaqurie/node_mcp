@@ -4,6 +4,7 @@ const chatHistory = document.getElementById("chatHistory");
 
 // Auth Elements
 const authStatus = document.getElementById("authStatus");
+const usageStatus = document.getElementById("usageStatus");
 const authBtn = document.getElementById("authBtn");
 const loginModal = document.getElementById("loginModal");
 const closeModalBtn = document.getElementById("closeModalBtn");
@@ -16,6 +17,27 @@ const quickDevLoginBtn = document.getElementById("quickDevLoginBtn");
 let token = localStorage.getItem("jwt_token") || null;
 let userEmail = localStorage.getItem("user_email") || null;
 
+function updateUsageBanner(usageText = "", paginationHint = "") {
+  const parts = [];
+  if (usageText) {
+    parts.push(
+      usageText.replace(/^\[?Usage:\s*/i, "Usage: ").replace(/\]$/, ""),
+    );
+  }
+  if (paginationHint) {
+    parts.push(paginationHint);
+  }
+
+  const statusText = parts.join(" • ");
+  if (statusText) {
+    usageStatus.textContent = statusText;
+    usageStatus.classList.add("visible");
+  } else {
+    usageStatus.textContent = "";
+    usageStatus.classList.remove("visible");
+  }
+}
+
 function updateAuthUI() {
   if (token) {
     authStatus.textContent = `Logged in as ${userEmail || "User"}`;
@@ -27,6 +49,7 @@ function updateAuthUI() {
     authStatus.classList.remove("logged-in");
     authBtn.textContent = "Login";
     authBtn.classList.remove("logout");
+    updateUsageBanner();
   }
 }
 
@@ -87,7 +110,12 @@ loginForm.addEventListener("submit", async (e) => {
     localStorage.setItem("user_email", userEmail);
     updateAuthUI();
     loginModal.classList.add("hidden");
-    addMessage(`✅ Successfully logged in as <strong>${userEmail}</strong>! You now have access to authenticated user tools and database records.`, "system", false, true);
+    addMessage(
+      `✅ Successfully logged in as <strong>${userEmail}</strong>! You now have access to authenticated user tools and database records.`,
+      "system",
+      false,
+      true,
+    );
   } catch (err) {
     loginError.textContent = `Connection error: ${err.message}`;
     loginError.classList.remove("hidden");
@@ -121,7 +149,12 @@ quickDevLoginBtn.addEventListener("click", async () => {
     localStorage.setItem("user_email", userEmail);
     updateAuthUI();
     loginModal.classList.add("hidden");
-    addMessage(`🚀 Quick Dev Login successful! Authenticated as <strong>${userEmail}</strong>.`, "system", false, true);
+    addMessage(
+      `🚀 Quick Dev Login successful! Authenticated as <strong>${userEmail}</strong>.`,
+      "system",
+      false,
+      true,
+    );
   } catch (err) {
     loginError.textContent = `Connection error: ${err.message}`;
     loginError.classList.remove("hidden");
@@ -131,38 +164,44 @@ quickDevLoginBtn.addEventListener("click", async () => {
 function renderMarkdownTable(text) {
   if (!text.includes("|")) return null;
   const lines = text.trim().split("\n");
-  const tableLines = lines.filter(line => line.trim().startsWith("|"));
-  
+  const tableLines = lines.filter((line) => line.trim().startsWith("|"));
+
   if (tableLines.length < 2) return null;
 
-  const parseRow = (line) => line.split("|").slice(1, -1).map(c => c.trim());
+  const parseRow = (line) =>
+    line
+      .split("|")
+      .slice(1, -1)
+      .map((c) => c.trim());
   const headerCols = parseRow(tableLines[0]);
   const bodyRows = tableLines.slice(2).map(parseRow);
 
   let html = `<div class="table-wrapper"><table class="mcp-table"><thead><tr>`;
-  headerCols.forEach(col => {
-    html += `<th>${col.replace(/\*\*/g, '')}</th>`;
+  headerCols.forEach((col) => {
+    html += `<th>${col.replace(/\*\*/g, "")}</th>`;
   });
   html += `</tr></thead><tbody>`;
 
-  bodyRows.forEach(row => {
+  bodyRows.forEach((row) => {
     html += `<tr>`;
-    row.forEach(col => {
+    row.forEach((col) => {
       let cellText = col;
-      cellText = cellText.replace(/`([^`]+)`/g, '<code>$1</code>');
-      cellText = cellText.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      cellText = cellText.replace(/`([^`]+)`/g, "<code>$1</code>");
+      cellText = cellText.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
       html += `<td>${cellText}</td>`;
     });
     html += `</tr>`;
   });
 
   html += `</tbody></table></div>`;
-  
-  const nonTableText = lines.filter(line => !line.trim().startsWith("|")).join("<br/>")
-    .replace(/### (.*)/g, '<h3>$1</h3>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>');
 
-  return `<div class="markdown-table-container">${nonTableText ? `<div style="margin-bottom: 10px;">${nonTableText}</div>` : ''}${html}</div>`;
+  const nonTableText = lines
+    .filter((line) => !line.trim().startsWith("|"))
+    .join("<br/>")
+    .replace(/### (.*)/g, "<h3>$1</h3>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  return `<div class="markdown-table-container">${nonTableText ? `<div style="margin-bottom: 10px;">${nonTableText}</div>` : ""}${html}</div>`;
 }
 
 function addMessage(text, sender, isJson = false, isHtml = false) {
@@ -239,9 +278,13 @@ chatForm.addEventListener("submit", async (e) => {
   messageInput.value = "";
 
   const lowerText = text.toLowerCase();
-  
+
   // Handle slash commands
-  if (lowerText === "/command" || lowerText === "/commands" || lowerText === "/help") {
+  if (
+    lowerText === "/command" ||
+    lowerText === "/commands" ||
+    lowerText === "/help"
+  ) {
     addMessage(getCommandsListHtml(), "assistant", false, true);
     return;
   }
@@ -261,7 +304,12 @@ chatForm.addEventListener("submit", async (e) => {
     const email = parts[1];
     const password = parts[2] || "password123";
     if (!email) {
-      addMessage("Usage: <code>/login admin@example.com password123</code>", "system", false, true);
+      addMessage(
+        "Usage: <code>/login admin@example.com password123</code>",
+        "system",
+        false,
+        true,
+      );
       return;
     }
 
@@ -273,7 +321,10 @@ chatForm.addEventListener("submit", async (e) => {
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        addMessage(`Login error: ${data.error || "Failed to log in"}`, "system");
+        addMessage(
+          `Login error: ${data.error || "Failed to log in"}`,
+          "system",
+        );
         return;
       }
       token = data.token;
@@ -281,7 +332,12 @@ chatForm.addEventListener("submit", async (e) => {
       localStorage.setItem("jwt_token", token);
       localStorage.setItem("user_email", userEmail);
       updateAuthUI();
-      addMessage(`✅ Logged in as <strong>${userEmail}</strong>!`, "system", false, true);
+      addMessage(
+        `✅ Logged in as <strong>${userEmail}</strong>!`,
+        "system",
+        false,
+        true,
+      );
     } catch (err) {
       addMessage(`Login connection error: ${err.message}`, "system");
     }
@@ -309,7 +365,10 @@ chatForm.addEventListener("submit", async (e) => {
     try {
       data = JSON.parse(rawText);
     } catch {
-      addMessage(`Server Error (${response.status}): ${rawText || "Server is starting up or disconnected."}`, "system");
+      addMessage(
+        `Server Error (${response.status}): ${rawText || "Server is starting up or disconnected."}`,
+        "system",
+      );
       return;
     }
 
@@ -319,11 +378,30 @@ chatForm.addEventListener("submit", async (e) => {
       if (data.content && data.content.length > 0) {
         data.content.forEach((c) => {
           if (c.type === "text") {
+            const text =
+              typeof c.text === "string" ? c.text : JSON.stringify(c.text);
+            const usageMatch = text.match(/^\[?Usage:\s*(.+?)\]?$/is);
+            if (usageMatch) {
+              updateUsageBanner(usageMatch[1], "");
+              return;
+            }
+
+            if (text.includes('Type "next"')) {
+              const cleanedText = text
+                .replace(/\n?\n?Type "next".*$/i, "")
+                .trim();
+              updateUsageBanner("", 'Next page: type "next"');
+              if (cleanedText) {
+                addMessage(cleanedText, "assistant");
+              }
+              return;
+            }
+
             try {
-              const parsed = JSON.parse(c.text);
+              const parsed = JSON.parse(text);
               addMessage(JSON.stringify(parsed, null, 2), "assistant", true);
             } catch {
-              addMessage(c.text, "assistant");
+              addMessage(text, "assistant");
             }
           }
         });

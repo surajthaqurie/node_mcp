@@ -12,6 +12,38 @@ import { errorHandlerMiddleware } from "./middleware/error-handler.middleware.js
 import { apiRouter } from "./modules/index.js";
 import { createMcpServer } from "./mcp/mcp.server.js";
 
+function formatChatResponse(text: string) {
+  const usageMatch = text.match(/^\[Usage: (.+)\]\s*\n\s*\n?(.*)$/s);
+  if (!usageMatch) {
+    return { content: [{ type: "text", text }] };
+  }
+
+  const usageText = `[Usage: ${usageMatch[1]}]`;
+  const answerText = usageMatch[2]?.trim() || "";
+  return {
+    content: [
+      { type: "text", text: usageText },
+      ...(answerText ? [{ type: "text", text: answerText }] : []),
+    ],
+  };
+}
+
+function formatNativeAssistantResponse(text: string) {
+  const usageMatch = text.match(/^\[Usage: (.+)\]\s*\n\s*\n?(.*)$/s);
+  if (!usageMatch) {
+    return { content: [{ type: "text", text }] };
+  }
+
+  const usageText = `Usage: ${usageMatch[1]}`;
+  const answerText = usageMatch[2]?.trim() || "";
+  return {
+    content: [
+      { type: "text", text: usageText },
+      ...(answerText ? [{ type: "text", text: answerText }] : []),
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Express Application Setup & Functional NestJS-Style Architecture
 // ---------------------------------------------------------------------------
@@ -78,7 +110,7 @@ app.post(
       const aiResponse = await processChat(message, tools, {
         userId: req.user?.userId,
       });
-      res.json({ content: [{ type: "text", text: aiResponse }] });
+      res.json(formatNativeAssistantResponse(aiResponse));
     } catch (err: any) {
       res.json({ error: `AI Error: ${err.message}` });
     }
@@ -100,7 +132,7 @@ app.post(
       const aiResponse = await processChat(message, tools, {
         userId: req.user?.userId,
       });
-      res.json({ content: [{ type: "text", text: aiResponse }] });
+      res.json(formatNativeAssistantResponse(aiResponse));
     } catch (err: any) {
       res.json({ error: `AI Error: ${err.message}` });
     }
