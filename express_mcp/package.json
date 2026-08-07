@@ -1,0 +1,48 @@
+{
+  "name": "express_mcp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "tsx watch src/server.ts",
+    "dev:client": "cd client && npm run dev",
+    "dev:all": "npm run db:migrate && npm run dev",
+    "build": "tsc && mkdir -p dist/migrations && cp src/migrations/*.sql dist/migrations/",
+    "start": "node dist/server.js",
+    "start:all": "npm run build && npm run db:migrate && npm run start",
+    "migrate": "tsx src/migrations/runner.ts",
+    "db:migrate": "tsx src/migrations/runner.ts",
+    "db:migrate:prod": "node dist/migrations/runner.js",
+    "mcp:stdio": "tsx src/mcp/stdio.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@google/genai": "^2.16.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "ollama": "^0.6.3",
+    "pg": "^8.22.0",
+    "swagger-ui-express": "^5.0.1",
+    "zod": "^4.4.3",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.1.2",
+    "@types/pg": "^8.20.4",
+    "@types/swagger-ui-express": "^4.1.8",
+    "concurrently": "^10.0.4",
+    "tsx": "^4.23.10",
+    "typescript": "^7.0.2"
+  }
+}
