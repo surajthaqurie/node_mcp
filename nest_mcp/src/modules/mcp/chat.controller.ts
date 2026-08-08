@@ -97,6 +97,7 @@ export class ChatController {
 
     try {
       const response = await this.ollamaService.chat(dto.message, sessionKey, {
+        user,
         isAuthenticated,
       });
       const processingTimeMs = Date.now() - startTime;

@@ -26,6 +26,7 @@ import { ConfigService } from '@nestjs/config';
 import { Ollama, ChatResponse, Message } from 'ollama';
 import { McpServerService } from './mcp-server.service';
 import { IMcpTool } from './interfaces/mcp-tool.interface';
+import { User } from '../users/entities/user.entity';
 import {
   buildOllamaTools,
   buildSystemPrompt,
@@ -88,12 +89,24 @@ export class OllamaService implements OnModuleInit {
   async chat(
     message: string,
     sessionKey = 'default',
-    options: { isAuthenticated?: boolean } = {},
+    options: { user?: User | null; isAuthenticated?: boolean } = {},
   ): Promise<string> {
     // ── Token limit check ───────────────────────────────────────────────────
     const limitError = checkTokenLimit(sessionKey, message);
     if (limitError) {
       throw new BadRequestException(limitError);
+    }
+
+    // ── Conversational Check (Greetings & General Chat) ─────────────────────
+    const conversationalReply = this.handleConversationalMessage(message);
+    if (conversationalReply) {
+      const summary = trackUsage(sessionKey, message, conversationalReply);
+      return appendUsageHeader(
+        conversationalReply,
+        summary.usage.totalTokens,
+        summary.limit,
+        summary.remaining,
+      );
     }
 
     const tools = this.mcpServerService.getTools();
@@ -186,7 +199,12 @@ export class OllamaService implements OnModuleInit {
           `Ollama requested tool: "${toolName}" with args: ${JSON.stringify(args)}`,
         );
 
-        const toolResult = await this.executeTool(tools, toolName, args);
+        const toolResult = await this.executeTool(
+          tools,
+          toolName,
+          args,
+          options.user,
+        );
         messages.push({ role: 'tool', content: toolResult });
       }
 
@@ -214,7 +232,21 @@ export class OllamaService implements OnModuleInit {
         message,
         tools,
         options.isAuthenticated,
+        options.user,
       );
+    }
+
+    // ── Re-verification check for ambiguous LLM responses ───────────────────
+    if (this.isConfusedResponse(finalText)) {
+      finalText = [
+        '🤔 **Re-verification & Clarification Required**',
+        "I couldn't quite determine your intent from that prompt. Could you please clarify your request or select one of the suggested actions below?",
+        '',
+        '💡 **Suggested Actions**:',
+        '• 📋 **Tasks**: "List all tasks" or "Create a task titled [title]"',
+        '• 👥 **Users**: "List all users" or "Get user stats"',
+        '• 💬 **Comments**: "List all comments" or "Add a comment on task [id]"',
+      ].join('\n');
     }
 
     // ── Record token usage and format output ─────────────────────────────────
@@ -230,12 +262,125 @@ export class OllamaService implements OnModuleInit {
   // ── Private helpers ──────────────────────────────────────────────────────
 
   /**
+   * Detects casual conversational greetings & general questions to avoid triggering hallucinated tool calls.
+   */
+  private handleConversationalMessage(message: string): string | null {
+    const lower = message.trim().toLowerCase();
+
+    // If message contains explicit database action intent, pass through to tools
+    const actionKeywords = [
+      'list',
+      'get',
+      'create',
+      'update',
+      'delete',
+      'show',
+      'fetch',
+      'find',
+      'search',
+      'add',
+      'remove',
+      'task',
+      'tasks',
+      'user',
+      'users',
+      'comment',
+      'comments',
+      'stat',
+      'stats',
+      'page',
+      'count',
+      'detail',
+      'details',
+    ];
+
+    const hasActionIntent = actionKeywords.some((k) => lower.includes(k));
+    if (hasActionIntent) return null;
+
+    if (
+      lower.includes('what are you doing') ||
+      lower.includes('what r u doing') ||
+      lower.includes('wbu') ||
+      lower.includes('wyd')
+    ) {
+      return 'Hello! 👋 I am active and ready to assist you! I can help you manage tasks, look up users, handle comments, or answer general questions.';
+    }
+
+    const greetings = [
+      'hlw',
+      'hello',
+      'hi',
+      'hey',
+      'helo',
+      'hallo',
+      'hola',
+      'hy',
+      'greetings',
+      'good morning',
+      'good afternoon',
+      'good evening',
+      'wassup',
+      'sup',
+      'howdy',
+    ];
+
+    if (
+      greetings.some(
+        (g) =>
+          lower === g || lower.startsWith(g + ' ') || lower.endsWith(' ' + g),
+      )
+    ) {
+      return 'Hello! 👋 How can I assist you today? Feel free to ask general questions or manage your tasks, users, and comments!';
+    }
+
+    if (
+      lower.includes('who are you') ||
+      lower.includes('what can you do') ||
+      lower === 'help'
+    ) {
+      return (
+        '🤖 **I am your NestMCP AI Assistant!**\n\n' +
+        'Here is what I can do:\n' +
+        '- **General Knowledge**: Ask me general questions anytime without logging in.\n' +
+        '- **Task Management**: List, create, update, or inspect tasks.\n' +
+        '- **User Directory**: View user profiles, stats, and access controls.\n' +
+        '- **Comments**: Manage task comments and discussion threads.'
+      );
+    }
+
+    if (lower.includes('thank') || lower === 'thx') {
+      return "You're very welcome! Let me know if you need anything else. 😊";
+    }
+
+    return null;
+  }
+
+  /**
+   * Helper to check if the LLM output is ambiguous, empty, or confused.
+   */
+  private isConfusedResponse(text: string): boolean {
+    if (!text || text.trim() === '') return true;
+    const lower = text.toLowerCase();
+    const confusionPhrases = [
+      "i don't understand",
+      'i am confused',
+      'could not understand',
+      "sorry, i don't know",
+      'unclear prompt',
+      'invalid request',
+      'not sure what you mean',
+    ];
+    return confusionPhrases.some((phrase) => lower.includes(phrase));
+  }
+
+  /**
    * Executes a single MCP tool handler by name, returning text result.
    */
   private async executeTool(
     tools: Record<string, IMcpTool>,
     toolName: string,
     args: Record<string, unknown>,
+    user?: User | null,
   ): Promise<string> {
     if (!tools[toolName]) {
       this.logger.warn(`Unknown tool requested: "${toolName}"`);
@@ -243,7 +388,7 @@ export class OllamaService implements OnModuleInit {
     }
 
     try {
-      const result = await tools[toolName].handler(args);
+      const result = await tools[toolName].handler(args, user);
       return result.content.map((c) => c.text).join('\n');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -260,8 +405,56 @@ export class OllamaService implements OnModuleInit {
     message: string,
     tools: Record<string, IMcpTool>,
     isAuthenticated = false,
+    user?: User | null,
   ): Promise<string> {
-    const lower = message.toLowerCase();
+    const lower = message.trim().toLowerCase();
+
+    // ── Greeting Detection ───────────────────────────────────────────────────
+    const greetings = [
+      'hlw',
+      'hello',
+      'hi',
+      'hey',
+      'helo',
+      'hallo',
+      'hola',
+      'hy',
+      'greetings',
+      'good morning',
+      'good afternoon',
+      'good evening',
+      'wassup',
+      'sup',
+      'howdy',
+    ];
+    if (
+      greetings.some(
+        (g) =>
+          lower === g || lower.startsWith(g + ' ') || lower.endsWith(' ' + g),
+      )
+    ) {
+      return 'Hello! 👋 How can I assist you today? Feel free to ask general questions or query your tasks, users, and comments!';
+    }
+
+    // ── Gratitude & Help Detection ───────────────────────────────────────────
+    if (lower.includes('thank') || lower === 'thx') {
+      return "You're very welcome! Let me know if you need anything else. 😊";
+    }
+
+    if (
+      lower.includes('who are you') ||
+      lower.includes('what can you do') ||
+      lower === 'help'
+    ) {
+      return (
+        '🤖 **I am your NestMCP AI Assistant!**\n\n' +
+        'Here is what I can do:\n' +
+        '- **General Knowledge**: Ask me general questions anytime without logging in.\n' +
+        '- **Task Management**: List, create, update, or inspect tasks.\n' +
+        '- **User Directory**: View user profiles, stats, and access controls.\n' +
+        '- **Comments**: Manage task comments and discussion threads.'
+      );
+    }
 
     let toolName: string | null = null;
     const args: Record<string, unknown> = {};
@@ -275,6 +468,8 @@ export class OllamaService implements OnModuleInit {
       toolName = 'list_users';
     } else if (lower.includes('task') || lower.includes('tasks')) {
       toolName = 'list_tasks';
+    } else if (lower.includes('comment') || lower.includes('comments')) {
+      toolName = 'list_comments';
     }
 
     if (toolName && tools[toolName]) {
@@ -282,9 +477,9 @@ export class OllamaService implements OnModuleInit {
         return '🔒 Authentication Required: Accessing or querying database records (users, tasks, permissions) requires an active session. Please sign in to your account to execute database tools.';
       }
       this.logger.log(`Keyword fallback triggered for tool: "${toolName}"`);
-      return this.executeTool(tools, toolName, args);
+      return this.executeTool(tools, toolName, args, user);
     }
 
-    return 'I could not determine what action to take. Please rephrase your request.';
+    return 'I am here to help! Please ask a question or specify an action for tasks, users, or comments.';
   }
 }

@@ -25,6 +25,7 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { Permission } from '../../common/enums/permission.enum';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../users/entities/user.entity';
+import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 
 @ApiTags('Comments')
 @ApiBearerAuth()
@@ -45,17 +46,25 @@ export class CommentsController {
 
   @Get()
   @RequirePermissions(Permission.COMMENT_READ)
-  @ApiOperation({ summary: 'Get all comments (optionally filtered by taskId)' })
+  @ApiOperation({
+    summary: 'Get all comments (paginated, optionally filtered by taskId)',
+  })
   @ApiQuery({ name: 'taskId', required: false, type: String })
-  findAll(@Query('taskId') taskId?: string) {
-    return this.commentsService.findAll(taskId);
+  findAll(
+    @Query('taskId') taskId?: string,
+    @Query() query?: PaginationQueryDto,
+  ) {
+    return this.commentsService.findAll(taskId, query);
   }
 
   @Get('task/:taskId')
   @RequirePermissions(Permission.COMMENT_READ)
-  @ApiOperation({ summary: 'Get all comments for a specific task' })
-  findByTask(@Param('taskId', ParseUUIDPipe) taskId: string) {
-    return this.commentsService.findByTask(taskId);
+  @ApiOperation({ summary: 'Get all comments for a specific task (paginated)' })
+  findByTask(
+    @Param('taskId', ParseUUIDPipe) taskId: string,
+    @Query() query?: PaginationQueryDto,
+  ) {
+    return this.commentsService.findByTask(taskId, query);
   }
 
   @Get(':id')

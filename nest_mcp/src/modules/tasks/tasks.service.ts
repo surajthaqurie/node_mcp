@@ -10,6 +10,12 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { User } from '../users/entities/user.entity';
 import { Role } from '../../common/enums/role.enum';
+import { TaskStatus } from '../../common/enums/task-status.enum';
+import {
+  PaginationQueryDto,
+  PaginatedResponse,
+} from '../../common/dto/pagination.dto';
+import { createPaginatedResponse } from '../../common/utils/pagination.util';
 
 @Injectable()
 export class TasksService {
@@ -26,7 +32,14 @@ export class TasksService {
     return this.taskRepository.save(task);
   }
 
-  async findAll(currentUser: User): Promise<Task[]> {
+  async findAll(
+    currentUser: User,
+    query?: PaginationQueryDto & { status?: TaskStatus },
+  ): Promise<PaginatedResponse<Task>> {
+    const page = query?.page ?? 1;
+    const limit = query?.limit ?? 10;
+    const skip = (page - 1) * limit;
+
     const qb = this.taskRepository
       .createQueryBuilder('task')
       .leftJoinAndSelect('task.createdBy', 'createdBy')
@@ -35,12 +48,19 @@ export class TasksService {
 
     // Non-admins/managers see only their own tasks
     if (currentUser.role !== Role.ADMIN && currentUser.role !== Role.MANAGER) {
-      qb.where('task.createdById = :id OR task.assigneeId = :id', {
+      qb.where('(task.createdById = :id OR task.assigneeId = :id)', {
         id: currentUser.id,
       });
     }
 
-    return qb.getMany();
+    if (query?.status) {
+      qb.andWhere('task.status = :status', { status: query.status });
+    }
+
+    qb.skip(skip).take(limit);
+
+    const [data, totalItems] = await qb.getManyAndCount();
+    return createPaginatedResponse(data, totalItems, page, limit);
   }
 
   async findOne(id: string, currentUser: User): Promise<Task> {
@@ -88,15 +108,26 @@ export class TasksService {
     await this.taskRepository.remove(task);
   }
 
-  async getMyTasks(currentUser: User): Promise<Task[]> {
-    return this.taskRepository
+  async getMyTasks(
+    currentUser: User,
+    query?: PaginationQueryDto,
+  ): Promise<PaginatedResponse<Task>> {
+    const page = query?.page ?? 1;
+    const limit = query?.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const qb = this.taskRepository
       .createQueryBuilder('task')
       .leftJoinAndSelect('task.createdBy', 'createdBy')
       .leftJoinAndSelect('task.assignee', 'assignee')
-      .where('task.createdById = :id OR task.assigneeId = :id', {
+      .where('(task.createdById = :id OR task.assigneeId = :id)', {
         id: currentUser.id,
       })
       .orderBy('task.createdAt', 'DESC')
-      .getMany();
+      .skip(skip)
+      .take(limit);
+
+    const [data, totalItems] = await qb.getManyAndCount();
+    return createPaginatedResponse(data, totalItems, page, limit);
   }
 }

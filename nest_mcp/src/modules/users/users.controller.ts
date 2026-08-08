@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Query,
   UseGuards,
   ParseUUIDPipe,
 } from '@nestjs/common';
@@ -22,6 +23,7 @@ import { Role } from '../../common/enums/role.enum';
 import { Permission } from '../../common/enums/permission.enum';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from './entities/user.entity';
+import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -41,9 +43,9 @@ export class UsersController {
   @Get()
   @Roles(Role.ADMIN, Role.MANAGER)
   @RequirePermissions(Permission.USER_READ)
-  @ApiOperation({ summary: 'Get all users (Admin/Manager only)' })
-  findAll() {
-    return this.usersService.findAll();
+  @ApiOperation({ summary: 'Get all users (paginated - Admin/Manager only)' })
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.usersService.findAll(query);
   }
 
   @Get('profile')

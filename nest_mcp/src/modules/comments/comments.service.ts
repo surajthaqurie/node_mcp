@@ -11,6 +11,11 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { User } from '../users/entities/user.entity';
 import { Role } from '../../common/enums/role.enum';
+import {
+  PaginationQueryDto,
+  PaginatedResponse,
+} from '../../common/dto/pagination.dto';
+import { createPaginatedResponse } from '../../common/utils/pagination.util';
 
 @Injectable()
 export class CommentsService {
@@ -43,7 +48,14 @@ export class CommentsService {
     return this.findOne(saved.id);
   }
 
-  async findAll(taskId?: string): Promise<Comment[]> {
+  async findAll(
+    taskId?: string,
+    query?: PaginationQueryDto,
+  ): Promise<PaginatedResponse<Comment>> {
+    const page = query?.page ?? 1;
+    const limit = query?.limit ?? 10;
+    const skip = (page - 1) * limit;
+
     const qb = this.commentRepository
       .createQueryBuilder('comment')
       .leftJoinAndSelect('comment.author', 'author')
@@ -54,20 +66,22 @@ export class CommentsService {
       qb.where('comment.taskId = :taskId', { taskId });
     }
 
-    return qb.getMany();
+    qb.skip(skip).take(limit);
+
+    const [data, totalItems] = await qb.getManyAndCount();
+    return createPaginatedResponse(data, totalItems, page, limit);
   }
 
-  async findByTask(taskId: string): Promise<Comment[]> {
+  async findByTask(
+    taskId: string,
+    query?: PaginationQueryDto,
+  ): Promise<PaginatedResponse<Comment>> {
     const task = await this.taskRepository.findOne({ where: { id: taskId } });
     if (!task) {
       throw new NotFoundException(`Task #${taskId} not found`);
     }
 
-    return this.commentRepository.find({
-      where: { taskId },
-      relations: { author: true },
-      order: { createdAt: 'ASC' },
-    });
+    return this.findAll(taskId, query);
   }
 
   async findOne(id: string): Promise<Comment> {

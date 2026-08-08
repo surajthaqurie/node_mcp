@@ -10,6 +10,11 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Role } from '../../common/enums/role.enum';
 import { Permission } from '../../common/enums/permission.enum';
+import {
+  PaginationQueryDto,
+  PaginatedResponse,
+} from '../../common/dto/pagination.dto';
+import { createPaginatedResponse } from '../../common/utils/pagination.util';
 
 @Injectable()
 export class UsersService {
@@ -31,19 +36,38 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
-  async findAll(): Promise<User[]> {
-    return this.userRepository.find({
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        permissions: true,
-        isActive: true,
-        createdAt: true,
-      },
-    });
+  async findAll(
+    query?: PaginationQueryDto & { role?: Role; activeOnly?: boolean },
+  ): Promise<PaginatedResponse<User>> {
+    const page = query?.page ?? 1;
+    const limit = query?.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const qb = this.userRepository
+      .createQueryBuilder('user')
+      .select([
+        'user.id',
+        'user.email',
+        'user.firstName',
+        'user.lastName',
+        'user.role',
+        'user.permissions',
+        'user.isActive',
+        'user.createdAt',
+      ])
+      .orderBy('user.createdAt', 'DESC');
+
+    if (query?.role) {
+      qb.andWhere('user.role = :role', { role: query.role });
+    }
+    if (query?.activeOnly === true) {
+      qb.andWhere('user.isActive = :isActive', { isActive: true });
+    }
+
+    qb.skip(skip).take(limit);
+
+    const [data, totalItems] = await qb.getManyAndCount();
+    return createPaginatedResponse(data, totalItems, page, limit);
   }
 
   async findOne(id: string): Promise<User> {

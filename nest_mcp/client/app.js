@@ -140,10 +140,20 @@ async function login(email, password) {
       body: JSON.stringify({ email, password }),
     });
 
-    const data = await res.json();
+    let data;
+    const responseText = await res.text();
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      data = { message: responseText || 'Login failed' };
+    }
 
     if (!res.ok) {
-      throw new Error(data.message || 'Login failed. Please check credentials.');
+      throw new Error(
+        Array.isArray(data.message)
+          ? data.message.join(', ')
+          : data.message || 'Login failed. Please check credentials.',
+      );
     }
 
     state.token = data.accessToken;
@@ -194,13 +204,20 @@ async function fetchTools() {
     if (!res.ok) {
       if (res.status === 401) {
         setServerStatus('Unauthorized', 'offline');
-        elements.toolsList.innerHTML = '<div class="loading-state">Please log in to view MCP tools.</div>';
+        elements.toolsList.innerHTML =
+          '<div class="loading-state">Please log in to view MCP tools.</div>';
         return;
       }
       throw new Error('Failed to load MCP tools');
     }
 
-    const data = await res.json();
+    let data;
+    const responseText = await res.text();
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      data = { tools: [] };
+    }
     state.tools = data.tools || [];
     elements.toolsCountBadge.textContent = state.tools.length;
     renderToolsList(state.tools);
@@ -258,20 +275,42 @@ function appendMessage(role, text, metadata = {}) {
     `;
   }
 
-  let authActionHtml = '';
-  if (text.includes('🔒 Authentication Required:')) {
-    authActionHtml = `
-      <div style="margin-top: 12px;">
-        <button class="btn btn-primary btn-sm chat-login-btn">🔑 Sign In to Execute Database Commands</button>
-      </div>
-    `;
+  let actionButtonsHtml = '';
+  if (role === 'ai') {
+    const buttons = [];
+
+    if (text.includes('🔒 Authentication Required:')) {
+      buttons.push('<button class="btn btn-primary btn-sm chat-login-btn">🔑 Sign In to Execute Database Commands</button>');
+    } else if (text.includes('🚫 Permission Denied:')) {
+      buttons.push('<button class="btn btn-warning btn-sm chat-login-btn">🔑 Switch Account (Elevated Role)</button>');
+    }
+
+    if (text.includes('📋 Payload Confirmation Required:')) {
+      buttons.push('<button class="btn btn-primary btn-sm chat-action-chip" data-prompt="Confirm creation with confirm: true">✅ Confirm Creation</button>');
+    }
+
+    // Interactive Pagination Button
+    const nextPageMatch = text.match(/Ask to ["']?show page (\d+) of (\w+)["']?/i);
+    if (nextPageMatch) {
+      const pageNum = nextPageMatch[1];
+      const category = nextPageMatch[2];
+      buttons.push(`<button class="btn btn-secondary btn-sm chat-action-chip" data-prompt="show page ${pageNum} of ${category}">➡️ View Page ${pageNum} of ${category}</button>`);
+    }
+
+    if (buttons.length > 0) {
+      actionButtonsHtml = `
+        <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+          ${buttons.join('')}
+        </div>
+      `;
+    }
   }
 
   row.innerHTML = `
     <div class="msg-avatar">${avatarText}</div>
     <div class="msg-bubble">
       <div>${formatMarkdown(text)}</div>
-      ${authActionHtml}
+      ${actionButtonsHtml}
       ${footerHtml}
     </div>
   `;
@@ -309,10 +348,19 @@ async function sendMessage(messageText) {
       body: JSON.stringify({ message: messageText }),
     });
 
-    const data = await res.json();
+    let data;
+    const responseText = await res.text();
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      data = { message: responseText || `HTTP ${res.status}: ${res.statusText || 'Server Error'}` };
+    }
 
     if (!res.ok) {
-      throw new Error(data.message || 'Chat request failed');
+      const errMsg = Array.isArray(data.message)
+        ? data.message.join(', ')
+        : data.message || `Server returned ${res.status}`;
+      throw new Error(errMsg);
     }
 
     if (data.model) {
@@ -411,12 +459,19 @@ function setupEventListeners() {
     showToast('Chat history cleared', 'info');
   });
 
-  // Prompt Chips & Chat Login Button
+  // Prompt Chips, Pagination Action Chips & Chat Login Button
   document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('prompt-chip')) {
-      const promptText = e.target.textContent.trim();
+    const target = e.target.closest('button');
+    if (!target) return;
+
+    if (
+      target.classList.contains('prompt-chip') ||
+      target.classList.contains('chat-action-chip')
+    ) {
+      const promptText =
+        target.getAttribute('data-prompt') || target.textContent.trim();
       sendMessage(promptText);
-    } else if (e.target.classList.contains('chat-login-btn')) {
+    } else if (target.classList.contains('chat-login-btn')) {
       openLoginModal();
     }
   });

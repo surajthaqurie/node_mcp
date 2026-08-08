@@ -4,6 +4,8 @@
  * Ensures every tool exposes: a unique name, description, JSON input schema, and an async handler.
  */
 
+import { User } from '../../users/entities/user.entity';
+
 export interface IMcpTool {
   /** Unique snake_case tool name (used as the function name by Ollama) */
   name: string;
@@ -19,9 +21,12 @@ export interface IMcpTool {
 
   /**
    * Async tool handler function.
-   * Receives parsed args from the LLM and returns MCP-compatible content array.
+   * Receives parsed args from the LLM and optional authenticated user, returning MCP-compatible content array.
    */
-  handler: (args: Record<string, unknown>) => Promise<{
+  handler: (
+    args: Record<string, unknown>,
+    user?: User | null,
+  ) => Promise<{
     content: Array<{ type: string; text: string }>;
   }>;
 }

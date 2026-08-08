@@ -5,3 +5,4 @@
 
 export * from './task.tools';
 export * from './user.tools';
+export * from './comment.tools';

@@ -13,6 +13,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TaskToolsProvider } from './tools/task.tools';
 import { UserToolsProvider } from './tools/user.tools';
+import { CommentToolsProvider } from './tools/comment.tools';
 import { IMcpTool } from './interfaces/mcp-tool.interface';
 
 @Injectable()
@@ -24,6 +25,7 @@ export class McpServerService implements OnModuleInit {
   constructor(
     private readonly taskToolsProvider: TaskToolsProvider,
     private readonly userToolsProvider: UserToolsProvider,
+    private readonly commentToolsProvider: CommentToolsProvider,
   ) {}
 
   onModuleInit() {
@@ -34,6 +36,7 @@ export class McpServerService implements OnModuleInit {
 
     this.registerProviderTools(this.taskToolsProvider.getTools());
     this.registerProviderTools(this.userToolsProvider.getTools());
+    this.registerProviderTools(this.commentToolsProvider.getTools());
 
     this.logger.log(
       `✅ MCP Server initialized with tools: [${Object.keys(this.toolRegistry).join(', ')}]`,

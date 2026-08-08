@@ -1,54 +1,53 @@
 /**
  * @file task.tools.ts
- * @description MCP tool definitions for Task management operations.
- *
- * WHY THIS EXISTS:
- * Exposes TasksService CRUD methods as LLM-callable MCP tools.
- * The Ollama service uses these tools in its function-calling loop to let the
- * AI perform real database operations (list tasks, get task details, create, update, delete).
- *
- * TOOLS REGISTERED:
- * - list_tasks         → Fetch all tasks (admin/manager sees all; user sees own)
- * - get_task           → Get a single task by ID
- * - create_task        → Create a new task (requires title; optional description/status/priority)
- * - update_task_status → Update the status of an existing task
- * - delete_task        → Delete a task by ID
+ * @description MCP tool definitions for Task management operations with permission enforcement.
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, HttpException } from '@nestjs/common';
 import { TasksService } from '../../tasks/tasks.service';
+import { CreateTaskDto } from '../../tasks/dto/create-task.dto';
 import { IMcpTool } from '../interfaces/mcp-tool.interface';
 import { Role } from '../../../common/enums/role.enum';
+import { Permission } from '../../../common/enums/permission.enum';
 import { User } from '../../users/entities/user.entity';
 import {
   TaskStatus,
   TaskPriority,
 } from '../../../common/enums/task-status.enum';
+import { dtoToInputSchema } from '../../../common/utils/dto-to-schema.util';
 
-/** Helper to extract error message safely for ESLint type compliance */
+/** Helper to extract error message safely including NestJS HttpException DTO details */
 function getErrorMessage(err: unknown): string {
+  if (err instanceof HttpException) {
+    const res = err.getResponse();
+    if (typeof res === 'object' && res !== null && 'message' in res) {
+      const msg = res.message;
+      return Array.isArray(msg) ? msg.join(', ') : String(msg);
+    }
+    if (typeof res === 'string') return res;
+  }
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Synthetic admin user used by MCP tool calls that require a User context */
-const MCP_ADMIN_USER: User = {
-  id: 'mcp-system',
-  email: 'mcp@system.local',
-  firstName: 'MCP',
-  lastName: 'System',
-  role: Role.ADMIN,
-  permissions: [],
-  isActive: true,
-  password: '',
-  tasks: [],
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  get fullName() {
-    return 'MCP System';
-  },
-  hashPassword: () => Promise.resolve(),
-  comparePassword: () => Promise.resolve(false),
-};
+/** Checks if the authenticated user has the required permission */
+function checkPermission(
+  user: User | null | undefined,
+  requiredPermission: Permission,
+): string | null {
+  if (!user) {
+    return '🔒 Authentication Required: Accessing database tools requires an active session. Please sign in to your account.';
+  }
+  if (user.role === Role.ADMIN) {
+    return null; // Admin has full access
+  }
+  const userPermissions = Array.isArray(user.permissions)
+    ? user.permissions
+    : [];
+  if (!userPermissions.includes(requiredPermission)) {
+    return `🚫 Permission Denied: You do not have the required permission ("${requiredPermission}") to perform this action.`;
+  }
+  return null;
+}
 
 @Injectable()
 export class TaskToolsProvider {
@@ -60,7 +59,7 @@ export class TaskToolsProvider {
       {
         name: 'list_tasks',
         description:
-          'List all tasks in the system. Returns id, title, description, status, priority, assignee, and creator for each task.',
+          'List all tasks in the system (paginated). Default: page 1, 10 items per page. Returns id, title, description, status, priority, assignee, and creator.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -70,26 +69,59 @@ export class TaskToolsProvider {
               description:
                 'Optional: filter tasks by status (todo, in_progress, done, cancelled)',
             },
+            page: {
+              type: 'number',
+              description: 'Optional: page number (default: 1)',
+            },
+            limit: {
+              type: 'number',
+              description: 'Optional: items per page (default: 10)',
+            },
           },
           required: [],
         },
-        handler: async (args) => {
-          const tasks = await this.tasksService.findAll(MCP_ADMIN_USER);
-          const filtered = args.status
-            ? tasks.filter((t) => t.status === args.status)
-            : tasks;
+        handler: async (args, user) => {
+          const permError = checkPermission(user, Permission.TASK_READ);
+          if (permError)
+            return { content: [{ type: 'text', text: permError }] };
 
-          const text =
-            filtered.length === 0
-              ? 'No tasks found.'
-              : filtered
-                  .map(
-                    (t) =>
-                      `ID: ${t.id}\nTitle: ${t.title}\nStatus: ${t.status}\nPriority: ${t.priority}\nAssignee: ${t.assigneeId ?? 'Unassigned'}\nCreated by: ${t.createdById}\nCreated: ${t.createdAt.toISOString()}`,
-                  )
-                  .join('\n---\n');
+          const currentUser = user as User;
+          const page = Number(args.page) || 1;
+          const limit = Number(args.limit) || 10;
+          const status = args.status as TaskStatus | undefined;
 
-          return { content: [{ type: 'text', text }] };
+          const result = await this.tasksService.findAll(currentUser, {
+            page,
+            limit,
+            status,
+          });
+
+          const { data, meta } = result;
+
+          if (data.length === 0) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `No tasks found (Page ${meta.page} of ${meta.totalPages}).`,
+                },
+              ],
+            };
+          }
+
+          const itemsText = data
+            .map(
+              (t) =>
+                `ID: ${t.id}\nTitle: ${t.title}\nStatus: ${t.status}\nPriority: ${t.priority}\nAssignee: ${t.assigneeId ?? 'Unassigned'}\nCreated by: ${t.createdById}\nCreated: ${t.createdAt.toISOString()}`,
+            )
+            .join('\n---\n');
+
+          let footer = `\n\n📌 Page ${meta.page} of ${meta.totalPages} (Showing ${data.length} of ${meta.totalItems} total tasks)`;
+          if (meta.hasNextPage) {
+            footer += `\n💡 More items available. Ask to "show page ${meta.page + 1} of tasks" to see more.`;
+          }
+
+          return { content: [{ type: 'text', text: itemsText + footer }] };
         },
       },
 
@@ -107,11 +139,16 @@ export class TaskToolsProvider {
           },
           required: ['id'],
         },
-        handler: async (args) => {
+        handler: async (args, user) => {
+          const permError = checkPermission(user, Permission.TASK_READ);
+          if (permError)
+            return { content: [{ type: 'text', text: permError }] };
+
           try {
+            const currentUser = user as User;
             const task = await this.tasksService.findOne(
               args.id as string,
-              MCP_ADMIN_USER,
+              currentUser,
             );
             const text = [
               `ID: ${task.id}`,
@@ -139,50 +176,71 @@ export class TaskToolsProvider {
       // ─── create_task ──────────────────────────────────────────────────────
       {
         name: 'create_task',
-        description: 'Create a new task in the system.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            title: { type: 'string', description: 'Task title (required)' },
-            description: {
-              type: 'string',
-              description: 'Optional task description',
-            },
-            status: {
-              type: 'string',
-              enum: Object.values(TaskStatus),
-              description: 'Initial status (default: todo)',
-            },
-            priority: {
-              type: 'string',
-              enum: Object.values(TaskPriority),
-              description: 'Task priority (default: medium)',
-            },
-            assigneeId: {
-              type: 'string',
-              description: 'UUID of the user to assign this task to',
-            },
+        description:
+          'Create a new task in the system. Validates payload fields and asks for confirmation before creation.',
+        inputSchema: dtoToInputSchema(CreateTaskDto, {
+          confirm: {
+            type: 'boolean',
+            description:
+              'Set to true to confirm creation payload and save task to database.',
           },
-          required: ['title'],
-        },
-        handler: async (args) => {
+        }),
+        handler: async (args, user) => {
+          const permError = checkPermission(user, Permission.TASK_CREATE);
+          if (permError)
+            return { content: [{ type: 'text', text: permError }] };
+
+          const title = args.title as string | undefined;
+          const isConfirmed = Boolean(args.confirm);
+
+          // Payload Validation Check
+          if (!title || title.trim() === '') {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: '⚠️ Payload Validation Failed: Missing required field "title". Please provide a valid title for the task.',
+                },
+              ],
+            };
+          }
+
+          // Payload Confirmation Check
+          if (!isConfirmed) {
+            const preview = [
+              '📋 Payload Confirmation Required:',
+              'Please review the task payload details before database creation:',
+              '',
+              `• Title: ${title}`,
+              `• Description: ${(args.description as string) || 'N/A'}`,
+              `• Status: ${(args.status as string) || TaskStatus.TODO}`,
+              `• Priority: ${(args.priority as string) || TaskPriority.MEDIUM}`,
+              `• Assignee ID: ${(args.assigneeId as string) || 'Unassigned'}`,
+              '',
+              'To proceed with creation, please confirm with `confirm: true` (or reply "Confirm task creation").',
+            ].join('\n');
+
+            return { content: [{ type: 'text', text: preview }] };
+          }
+
           try {
+            const currentUser = user as User;
             const task = await this.tasksService.create(
               {
-                title: args.title as string,
+                title,
                 description: args.description as string | undefined,
                 status: (args.status as TaskStatus) ?? TaskStatus.TODO,
                 priority:
                   (args.priority as TaskPriority) ?? TaskPriority.MEDIUM,
                 assigneeId: args.assigneeId as string | undefined,
               },
-              MCP_ADMIN_USER,
+              currentUser,
             );
             return {
               content: [
                 {
                   type: 'text',
-                  text: `Task created successfully!\nID: ${task.id}\nTitle: ${task.title}\nStatus: ${task.status}\nPriority: ${task.priority}`,
+                  text: `✅ Task created successfully!\nID: ${task.id}\nTitle: ${task.title}\nStatus: ${task.status}\nPriority: ${task.priority}`,
                 },
               ],
             };
@@ -215,12 +273,17 @@ export class TaskToolsProvider {
           },
           required: ['id', 'status'],
         },
-        handler: async (args) => {
+        handler: async (args, user) => {
+          const permError = checkPermission(user, Permission.TASK_UPDATE);
+          if (permError)
+            return { content: [{ type: 'text', text: permError }] };
+
           try {
+            const currentUser = user as User;
             const task = await this.tasksService.update(
               args.id as string,
               { status: args.status as TaskStatus },
-              MCP_ADMIN_USER,
+              currentUser,
             );
             return {
               content: [
@@ -251,9 +314,14 @@ export class TaskToolsProvider {
           },
           required: ['id'],
         },
-        handler: async (args) => {
+        handler: async (args, user) => {
+          const permError = checkPermission(user, Permission.TASK_DELETE);
+          if (permError)
+            return { content: [{ type: 'text', text: permError }] };
+
           try {
-            await this.tasksService.remove(args.id as string, MCP_ADMIN_USER);
+            const currentUser = user as User;
+            await this.tasksService.remove(args.id as string, currentUser);
             return {
               content: [
                 {
