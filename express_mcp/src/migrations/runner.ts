@@ -1,3 +1,15 @@
+/**
+ * @file runner.ts
+ * @description Automatic database initialization and SQL migration runner for Express MCP.
+ * 
+ * WHY THIS FILE EXISTS:
+ * Ensures PostgreSQL target database exists (creates target database automatically if missing) and executes
+ * pending `.sql` schema migration files in order while recording execution history in `schema_migrations`.
+ * 
+ * RUN COMMAND:
+ * `npm run db:migrate` or `npx tsx src/migrations/runner.ts`
+ */
+
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -9,6 +21,12 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/**
+ * Checks if target database specified in connection string exists.
+ * If missing, connects to default 'postgres' database and executes `CREATE DATABASE`.
+ * 
+ * @param dbUrl PostgreSQL connection URL string.
+ */
 async function ensureDatabaseExists(dbUrl: string) {
   const parsedUrl = new URL(dbUrl);
   const urlDbName = parsedUrl.pathname.replace(/^\//, "");
@@ -25,10 +43,10 @@ async function ensureDatabaseExists(dbUrl: string) {
   }
 
   if (dbName === "postgres") {
-    return; // Root postgres database
+    return; // System postgres database
   }
 
-  // Connect to default 'postgres' database to check/create target database
+  // Connect to default 'postgres' system database to check/create target database
   const systemUrl = new URL(dbUrl);
   systemUrl.pathname = "/postgres";
 
@@ -49,6 +67,9 @@ async function ensureDatabaseExists(dbUrl: string) {
   }
 }
 
+/**
+ * Reads, verifies, and executes unapplied SQL migration files in numeric order within transactional blocks.
+ */
 async function runMigrations() {
   const dbUrl = process.env.DATABASE_URL;
 
@@ -65,7 +86,7 @@ async function runMigrations() {
   const pool = new Pool({ connectionString: dbUrl });
 
   try {
-    // 2. Create schema_migrations table if not exists
+    // 2. Create schema_migrations tracking table if not exists
     await pool.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         id SERIAL PRIMARY KEY,
