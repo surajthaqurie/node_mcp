@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nest MCP — AI Assistant & Tool Explorer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app" class="app-layout">
+      <!-- Top Navigation Bar -->
+      <header class="app-header">
+        <div class="brand">
+          <div class="brand-logo">
+            <span class="logo-icon">⚡</span>
+          </div>
+          <div class="brand-info">
+            <h1>Nest MCP Controller</h1>
+            <span class="brand-subtitle">Ollama + Model Context Protocol</span>
+          </div>
+        </div>
+
+        <div class="header-center">
+          <div class="status-pill" id="serverStatusPill">
+            <span class="status-dot"></span>
+            <span class="status-text" id="serverStatusText">Connecting...</span>
+          </div>
+          <div class="model-badge">
+            <span class="badge-icon">🧠</span>
+            <span id="modelName">qwen2.5:1.5b</span>
+          </div>
+          <div class="usage-pill hidden" id="usagePill" title="Token usage & budget status">
+            <span class="usage-icon">📊</span>
+            <span class="usage-text" id="usageStatusText">45 / 20,000 tokens</span>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button id="toggleToolsBtn" class="btn btn-secondary btn-sm" title="Toggle Tools Panel">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+            </svg>
+            <span>MCP Tools</span>
+            <span class="badge" id="toolsCountBadge">0</span>
+          </button>
+          
+          <div id="userProfile" class="user-profile hidden">
+            <div class="avatar" id="userAvatar">A</div>
+            <div class="user-details">
+              <span class="user-name" id="userName">Admin</span>
+              <span class="user-role" id="userRole">ADMIN</span>
+            </div>
+            <button id="logoutBtn" class="btn btn-icon btn-ghost" title="Log out">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <polyline points="16 17 21 12 16 7"></polyline>
+                <line x1="21" y1="12" x2="9" y2="12"></line>
+              </svg>
+            </button>
+          </div>
+
+          <button id="openLoginBtn" class="btn btn-primary btn-sm">
+            <span>Login</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Container: Sidebar + Chat -->
+      <div class="main-body">
+        <!-- Tools Drawer Sidebar -->
+        <aside id="toolsSidebar" class="tools-sidebar collapsed">
+          <div class="sidebar-header">
+            <h3>Registered MCP Tools</h3>
+            <button id="closeSidebarBtn" class="btn btn-icon btn-ghost btn-sm">&times;</button>
+          </div>
+          <div class="sidebar-search">
+            <input type="text" id="toolSearchInput" placeholder="Search tools..." />
+          </div>
+          <div class="tools-list" id="toolsList">
+            <div class="loading-state">Loading MCP tools...</div>
+          </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-viewport">
+          <!-- Chat Messages Container -->
+          <div class="chat-history" id="chatHistory">
+            <div class="welcome-hero">
+              <div class="hero-icon">🤖</div>
+              <h2>Welcome to Nest MCP Assistant</h2>
+              <p>
+                This AI assistant is integrated directly into NestJS via the Model Context Protocol (MCP).
+                It can execute task management and user directory operations directly against the PostgreSQL database.
+              </p>
+              
+              <div class="starter-prompts">
+                <div class="prompt-group-label">💡 Try asking:</div>
+                <div class="prompt-chips">
+                  <button class="chip prompt-chip">List all users in the system</button>
+                  <button class="chip prompt-chip">Show all high priority pending tasks</button>
+                  <button class="chip prompt-chip">Create a new task titled "Deploy to Staging" with high priority</button>
+                  <button class="chip prompt-chip">Get details for task #1</button>
+                </div>
+              </div>
+
+              <div id="authNotice" class="auth-notice">
+                <span>🔒 You are currently in Guest Mode.</span>
+                <button id="noticeLoginBtn" class="link-btn">Log in to execute tool commands</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chat Input Controls -->
+          <div class="chat-input-wrapper">
+            <form id="chatForm" class="chat-form">
+              <div class="textarea-container">
+                <textarea
+                  id="messageInput"
+                  rows="1"
+                  placeholder="Ask Ollama to query users, manage tasks, or run MCP tools..."
+                  autocomplete="off"
+                ></textarea>
+                <button type="button" id="clearChatBtn" class="btn btn-ghost btn-icon btn-sm" title="Clear chat history">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </div>
+              <button type="submit" id="sendBtn" class="btn btn-primary btn-send" title="Send message">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2.5" fill="none">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
+            </form>
+            <div class="input-footer">
+              <span>Press <kbd>Enter</kbd> to send, <kbd>Shift + Enter</kbd> for new line</span>
+              <span id="typingIndicator" class="typing-indicator hidden">
+                <span class="pulse-dot"></span> Ollama is generating response...
+              </span>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title">
+            <span class="modal-icon">🔐</span>
+            <h2>Sign In to Nest MCP</h2>
+          </div>
+          <button id="closeModalBtn" class="btn btn-icon btn-ghost">&times;</button>
+        </div>
+        
+        <form id="loginForm" class="modal-form">
+          <div class="form-group">
+            <label for="emailInput">Email Address</label>
+            <input
+              type="email"
+              id="emailInput"
+              placeholder="admin@nest-mcp.com"
+              value="admin@nest-mcp.com"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="passwordInput">Password</label>
+            <input
+              type="password"
+              id="passwordInput"
+              placeholder="••••••••"
+              value="Admin@12345"
+              required
+            />
+          </div>
+          <div id="loginError" class="form-error hidden"></div>
+          <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+        </form>
+
+        <div class="modal-divider">
+          <span>OR QUICK DEV LOGIN</span>
+        </div>
+
+        <div class="quick-logins">
+          <button class="quick-login-btn" data-email="admin@nest-mcp.com" data-pass="Admin@12345">
+            <span class="role-badge role-admin">ADMIN</span>
+            <span class="quick-email">admin@nest-mcp.com</span>
+          </button>
+          <button class="quick-login-btn" data-email="manager1@nest-mcp.com" data-pass="Manager@12345">
+            <span class="role-badge role-manager">MANAGER</span>
+            <span class="quick-email">manager1@nest-mcp.com</span>
+          </button>
+          <button class="quick-login-btn" data-email="user1@nest-mcp.com" data-pass="User@12345">
+            <span class="role-badge role-user">USER</span>
+            <span class="quick-email">user1@nest-mcp.com</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
