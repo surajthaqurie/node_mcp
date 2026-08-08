@@ -1,10 +1,27 @@
+/**
+ * @file users.tools.ts
+ * @description User management tool handlers registered on the Model Context Protocol (MCP) server.
+ * 
+ * WHY THIS FILE EXISTS:
+ * Registers 3 MCP database tools for AI assistants:
+ * 1. `add_user`: Creates a new user in the database (requires authentication).
+ * 2. `get_user`: Retrieves user by UUID (requires authentication).
+ * 3. `get_all_users`: Fetches paginated user records formatted into a clean Markdown table with search capabilities.
+ */
+
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getAllUsers, getUserById, createUser } from "./users.service.js";
 import { AuthUser } from "../auth/auth.dto.js";
 
 /**
- * Helper to format user list into a Markdown Table response.
+ * Formats user list array into a clean Markdown table with pagination metadata.
+ * 
+ * @param data Array of user objects.
+ * @param pagination Object containing page, totalPages, total.
+ * @param query Optional search query string.
+ * @param searchBy Scope filter.
+ * @returns Formatted Markdown string.
  */
 function formatUsersTable(
   data: any[],
@@ -30,7 +47,10 @@ function formatUsersTable(
 }
 
 /**
- * Registers User MCP tools on the McpServer instance.
+ * Registers user-related MCP tools onto the target McpServer instance.
+ * 
+ * @param server McpServer instance.
+ * @param user Optional authenticated user context.
  */
 export function registerUserTools(server: McpServer, user?: AuthUser) {
   // 1. Add User Tool

@@ -1,8 +1,20 @@
+/**
+ * @file users.service.ts
+ * @description User service providing SQL queries and pagination logic for user record management.
+ * 
+ * WHY THIS FILE EXISTS:
+ * Handles direct PostgreSQL interactions for creating users, fetching paginated user lists with search filter clauses,
+ * and fetching user profiles by ID. Automatically handles lazy initialization of the `users` database table.
+ */
+
 import { pool } from "../../db.js";
 import { CreateUserDto, UserRecord } from "./users.dto.js";
 
 let tableInitialized = false;
 
+/**
+ * Generic Interface for Paginated API and Service responses.
+ */
 export interface PaginatedResponse<T> {
   data: T[];
   pagination: {
@@ -14,7 +26,7 @@ export interface PaginatedResponse<T> {
 }
 
 /**
- * Service Helper: Ensures the 'users' database table exists in PostgreSQL.
+ * Service Helper: Ensures the 'users' table exists in PostgreSQL database.
  */
 export async function initUsersTable() {
   if (tableInitialized) return;
@@ -35,6 +47,13 @@ export async function initUsersTable() {
   }
 }
 
+/**
+ * Helper to build parameterized SQL WHERE clauses for user search queries.
+ * 
+ * @param query Search query text string.
+ * @param searchBy Scope ("name", "email", or "all").
+ * @returns Object containing `whereClause` string and parameterized array.
+ */
 export function buildUserSearchClause(query?: string, searchBy?: string) {
   const trimmedQuery = query?.trim();
   if (!trimmedQuery) {
@@ -58,7 +77,13 @@ export function buildUserSearchClause(query?: string, searchBy?: string) {
 }
 
 /**
- * Service: Retrieves paginated user records from PostgreSQL database.
+ * Service: Retrieves paginated user records from PostgreSQL with optional text search filtering.
+ * 
+ * @param page Target page number (1-indexed).
+ * @param limit Number of records per page.
+ * @param query Optional search query string.
+ * @param searchBy Scope of search ("name", "email", "all").
+ * @returns Paginated result containing users array and pagination metadata.
  */
 export async function getAllUsers(
   page: number = 1,
@@ -94,7 +119,10 @@ export async function getAllUsers(
 }
 
 /**
- * Service: Finds a specific user by UUID primary key.
+ * Service: Finds a single user by UUID primary key.
+ * 
+ * @param id User UUID string.
+ * @returns UserRecord or null if user does not exist.
  */
 export async function getUserById(id: string): Promise<UserRecord | null> {
   await initUsersTable();
@@ -103,7 +131,10 @@ export async function getUserById(id: string): Promise<UserRecord | null> {
 }
 
 /**
- * Service: Inserts a new user record into the PostgreSQL database.
+ * Service: Inserts a new user record into PostgreSQL.
+ * 
+ * @param data CreateUserDto payload containing name, email, and optional role.
+ * @returns Newly inserted UserRecord.
  */
 export async function createUser(data: CreateUserDto): Promise<UserRecord> {
   await initUsersTable();

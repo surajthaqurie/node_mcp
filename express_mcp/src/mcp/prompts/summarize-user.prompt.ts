@@ -1,6 +1,19 @@
+/**
+ * @file summarize-user.prompt.ts
+ * @description MCP Prompt definition for summarizing user profiles.
+ * 
+ * WHY THIS FILE EXISTS:
+ * Provides a standardized prompt template for generating concise executive summaries of user identities.
+ */
+
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+/**
+ * Registers 'summarize_user' prompt template on MCP server instance.
+ * 
+ * ARGS: `{ name: string, email: string, role?: string }`
+ */
 export function registerSummarizeUserPrompt(server: McpServer) {
   server.registerPrompt(
     "summarize_user",

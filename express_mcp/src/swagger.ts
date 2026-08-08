@@ -1,8 +1,25 @@
+/**
+ * @file swagger.ts
+ * @description Swagger OpenAPI 3.0.0 documentation setup & dynamic MCP router bridge.
+ * 
+ * WHY THIS FILE EXISTS:
+ * 1. Hosts interactive Swagger UI documentation at `/api-docs`.
+ * 2. Dynamically inspects all registered MCP Tools, Resources, and Prompts from `McpServer`
+ *    and auto-generates REST endpoints (`/api/tools/:name`, `/api/resources/:name`, `/api/prompts/:name`)
+ *    allowing developers to directly test MCP tools from Swagger UI or REST clients (Postman/cURL).
+ */
+
 import { Express, Request, Response } from "express";
 import swaggerUi from "swagger-ui-express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { toJsonSchemaCompat } from "@modelcontextprotocol/sdk/server/zod-json-schema-compat.js";
 
+/**
+ * Configures OpenAPI specs and mounts Swagger UI middleware on Express application.
+ * 
+ * @param app Target Express application instance.
+ * @param server McpServer instance used to dynamically inspect registered tools, prompts, and resources.
+ */
 export function setupSwagger(app: Express, server: McpServer) {
   const openApiDoc = {
     openapi: "3.0.0",
@@ -292,7 +309,7 @@ export function setupSwagger(app: Express, server: McpServer) {
   const registeredResources = (server as any)._registeredResources as Record<string, any>;
   const registeredPrompts = (server as any)._registeredPrompts as Record<string, any>;
 
-  // 1. MCP Tools
+  // 1. MCP Tools Documentation & Wrappers
   for (const [name, tool] of Object.entries(registeredTools)) {
     let jsonSchema = {};
     if (tool.inputSchema) {
@@ -330,7 +347,7 @@ export function setupSwagger(app: Express, server: McpServer) {
     });
   }
 
-  // 2. MCP Resources
+  // 2. MCP Resources Documentation & Wrappers
   for (const resource of Object.values(registeredResources)) {
     const name = resource.name;
     const uriTemplate = resource.uriTemplate;
@@ -380,7 +397,7 @@ export function setupSwagger(app: Express, server: McpServer) {
     });
   }
 
-  // 3. MCP Prompts
+  // 3. MCP Prompts Documentation & Wrappers
   for (const [name, prompt] of Object.entries(registeredPrompts)) {
     let jsonSchema = {};
     if (prompt.argsSchema) {

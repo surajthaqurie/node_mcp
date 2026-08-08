@@ -1,10 +1,24 @@
+/**
+ * @file auth.controller.ts
+ * @description HTTP controllers for Authentication endpoints (`/api/auth/login`, `/api/auth/token`).
+ * 
+ * WHY THIS FILE EXISTS:
+ * Processes incoming HTTP requests, validates request payloads with Zod schemas, invokes auth services,
+ * and formats HTTP responses.
+ */
+
 import { Request, Response } from "express";
 import { LoginSchema } from "./auth.dto.js";
 import { generateToken } from "./auth.service.js";
 
 /**
- * Controller: Handles user login.
- * Validates request payload against LoginSchema and generates a signed JWT token.
+ * Controller: Handles user login (`POST /api/auth/login`).
+ * 
+ * WHY:
+ * Validates login credentials against LoginSchema and generates a signed JWT token.
+ * 
+ * @param req Express Request object containing email & password in body.
+ * @param res Express Response object returning JSON payload with JWT token.
  */
 export async function loginController(req: Request, res: Response) {
   const parseResult = LoginSchema.safeParse(req.body);
@@ -26,8 +40,14 @@ export async function loginController(req: Request, res: Response) {
 }
 
 /**
- * Controller: Generates a development JWT token with custom user details.
- * Useful for testing authenticated REST & MCP endpoints in development.
+ * Controller: Generates a development JWT token (`POST /api/auth/token`).
+ * 
+ * WHY:
+ * Facilitates quick development testing of authenticated REST endpoints and MCP routes by generating
+ * custom user-scoped JWT tokens without requiring real credentials or database records.
+ * 
+ * @param req Request containing userId, email, and optional role.
+ * @param res Response containing generated dev Bearer token.
  */
 export async function generateDevTokenController(req: Request, res: Response) {
   const { userId, email, role } = req.body;

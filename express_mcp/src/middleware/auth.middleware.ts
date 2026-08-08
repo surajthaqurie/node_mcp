@@ -1,3 +1,12 @@
+/**
+ * @file auth.middleware.ts
+ * @description Express authentication middlewares for handling JWT Bearer token validation.
+ * 
+ * WHY THIS FILE EXISTS:
+ * Provides two middleware functions (`authMiddleware` and `optionalAuthMiddleware`) to protect routes and extract identity metadata
+ * from incoming HTTP Authorization headers, attaching decoded `AuthUser` data to `req.user`.
+ */
+
 import { Request, Response, NextFunction } from "express";
 import { AuthUser } from "../modules/auth/auth.dto.js";
 import { verifyToken } from "../modules/auth/auth.service.js";
@@ -11,8 +20,11 @@ export interface AuthenticatedRequest extends Request {
 
 /**
  * Strict Authentication Middleware:
- * Verifies Authorization: Bearer <token> header.
- * Returns 401 Unauthorized if token is missing, invalid, or expired.
+ * 
+ * WHY:
+ * Protects authenticated routes (e.g. `/api/tasks`, `/api/chat/authenticated`, `/mcp`).
+ * Verifies `Authorization: Bearer <token>` header against JWT secret.
+ * Returns HTTP 401 Unauthorized if token is missing, invalid, or expired.
  */
 export function authMiddleware(
   req: AuthenticatedRequest,
@@ -28,7 +40,7 @@ export function authMiddleware(
   if (!token) {
     return res
       .status(401)
-      .json({ error: "Unauthorized: Missing Bearer token" });
+      .json({ error: "Unauthorized: Missing Bearer token in Authorization header" });
   }
 
   try {
@@ -38,14 +50,18 @@ export function authMiddleware(
   } catch (err) {
     return res
       .status(401)
-      .json({ error: "Unauthorized: Invalid or expired token" });
+      .json({ error: "Unauthorized: Invalid or expired Bearer token" });
   }
 }
 
 /**
- * Optional Authentication Middleware (for Global Chat & Public Routes):
- * Inspects Authorization header if present. Populates req.user if valid, or falls back to guest user context.
- * Never fails with 401.
+ * Optional Authentication Middleware:
+ * 
+ * WHY:
+ * Supports global endpoints (e.g. `/api/chat`) that accept both authenticated and unauthenticated guest requests.
+ * If a valid Bearer token is provided, populates `req.user` with decoded user identity.
+ * If token is omitted or invalid, assigns default guest context (`userId: "guest-user"`).
+ * Never fails with HTTP 401.
  */
 export function optionalAuthMiddleware(
   req: AuthenticatedRequest,
@@ -63,11 +79,11 @@ export function optionalAuthMiddleware(
       const decoded = verifyToken(token);
       req.user = decoded;
     } catch {
-      // If token is invalid or expired, continue as guest/global user
+      // If token is invalid or expired, fall back to guest session
       req.user = undefined;
     }
   } else {
-    // Default guest context if no token provided
+    // Default guest user context
     req.user = {
       userId: "guest-user",
       email: "guest@example.com",

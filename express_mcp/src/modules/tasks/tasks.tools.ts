@@ -1,3 +1,17 @@
+/**
+ * @file tasks.tools.ts
+ * @description Task management tool handlers registered on the Model Context Protocol (MCP) server.
+ * 
+ * WHY THIS FILE EXISTS:
+ * Registers 6 interactive tools allowing AI agents (or users via `/api/chat`) to perform task actions:
+ * 1. `create_task`: Creates new task for authenticated user.
+ * 2. `list_tasks`: Retrieves paginated tasks formatted into a clean Markdown Table.
+ * 3. `get_task_counts_by_user`: Aggregates active task counts per user.
+ * 4. `get_deleted_task_counts_by_user`: Aggregates deleted task counts per user.
+ * 5. `update_task_status`: Changes status of an existing task.
+ * 6. `delete_task`: Soft-deletes a task by ID.
+ */
+
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AuthUser } from "../auth/auth.dto.js";
@@ -11,7 +25,11 @@ import {
 } from "./tasks.service.js";
 
 /**
- * Helper to format task list into a Markdown Table response.
+ * Formats task list array into a clean Markdown table with page metadata.
+ * 
+ * @param data Array of task objects.
+ * @param pagination Object containing page, totalPages, total.
+ * @returns Formatted Markdown string.
  */
 function formatTasksTable(data: any[], pagination: any): string {
   if (data.length === 0) return "No tasks found.";
@@ -28,6 +46,12 @@ function formatTasksTable(data: any[], pagination: any): string {
   return header + tableHeader + tableRows;
 }
 
+/**
+ * Registers task-related MCP tools onto the target McpServer instance.
+ * 
+ * @param server McpServer instance.
+ * @param user Optional authenticated user identity.
+ */
 export function registerTaskTools(server: McpServer, user?: AuthUser) {
   const currentUserId = user?.userId || "demo-user-123";
 

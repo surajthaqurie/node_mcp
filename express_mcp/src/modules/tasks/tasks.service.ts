@@ -1,9 +1,21 @@
+/**
+ * @file tasks.service.ts
+ * @description Task database service providing SQL query executions for tasks CRUD operations and reporting aggregations.
+ * 
+ * WHY THIS FILE EXISTS:
+ * Encapsulates PostgreSQL database logic for creating, listing, updating, soft-deleting, and reporting on task entities.
+ * Automatically initializes and migrates `tasks` table schema on first query execution.
+ */
+
 import { pool } from "../../db.js";
 import { TaskRecord } from "./tasks.dto.js";
 import { PaginatedResponse } from "../users/users.service.js";
 
 let tableInitialized = false;
 
+/**
+ * Service Helper: Creates tasks table if it does not exist and ensures necessary column schemas.
+ */
 async function ensureTaskTableSchema() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tasks (
@@ -36,7 +48,7 @@ async function ensureTaskTableSchema() {
 }
 
 /**
- * Service Helper: Ensures the 'tasks' table exists in PostgreSQL database.
+ * Service Helper: Lazy initialization guard for task database schema.
  */
 export async function initTasksTable() {
   if (tableInitialized) return;
@@ -49,7 +61,10 @@ export async function initTasksTable() {
 }
 
 /**
- * Service: Inserts a new task owned by the specified user into PostgreSQL.
+ * Service: Inserts a new task record bound to a specific user.
+ * 
+ * @param data Object containing title, description, status, and userId.
+ * @returns Created TaskRecord object.
  */
 export async function createTask(data: {
   title: string;
@@ -69,7 +84,13 @@ export async function createTask(data: {
 }
 
 /**
- * Service: Fetches paginated tasks owned by a specific user with optional status filter.
+ * Service: Retrieves paginated task records owned by a user with optional status filter.
+ * 
+ * @param userId Owner user ID filter.
+ * @param status Optional task status filter ("PENDING", "IN_PROGRESS", "COMPLETED").
+ * @param page Target page number (1-indexed).
+ * @param limit Items per page.
+ * @returns Paginated result object containing task array and metadata.
  */
 export async function getTasks(
   userId: string,
@@ -116,7 +137,12 @@ export async function getTasks(
 }
 
 /**
- * Service: Updates status of a task for a given user.
+ * Service: Updates the status of an existing active task.
+ * 
+ * @param id Task UUID string.
+ * @param status New target status string.
+ * @param userId Authenticated owner user ID.
+ * @returns Updated TaskRecord or null if task not found or access denied.
  */
 export async function updateTaskStatus(
   id: string,
@@ -135,7 +161,11 @@ export async function updateTaskStatus(
 }
 
 /**
- * Service: Removes a task by ID owned by the given user.
+ * Service: Soft-deletes a task by setting `deleted_at` timestamp.
+ * 
+ * @param id Task UUID string.
+ * @param userId Owner user ID performing deletion.
+ * @returns Boolean true if task was soft deleted, false otherwise.
  */
 export async function deleteTask(id: string, userId: string): Promise<boolean> {
   await initTasksTable();
@@ -151,7 +181,9 @@ export async function deleteTask(id: string, userId: string): Promise<boolean> {
 }
 
 /**
- * Service: Aggregates task counts by user for admin-style reporting.
+ * Service: Aggregates active task counts grouped by user for reporting/admin dashboards.
+ * 
+ * @returns Array of objects containing userId and active taskCount.
  */
 export async function getTaskCountsByUser(): Promise<
   Array<{ userId: string; taskCount: number }>
@@ -167,6 +199,11 @@ export async function getTaskCountsByUser(): Promise<
   return result.rows;
 }
 
+/**
+ * Service: Aggregates soft-deleted task counts grouped by user.
+ * 
+ * @returns Array of objects containing userId and deletedTaskCount.
+ */
 export async function getDeletedTaskCountsByUser(): Promise<
   Array<{ userId: string; deletedTaskCount: number }>
 > {

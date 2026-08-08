@@ -1,9 +1,20 @@
+/**
+ * @file users.controller.ts
+ * @description HTTP controllers for User management endpoints (`/api/users`).
+ * 
+ * WHY THIS FILE EXISTS:
+ * Handles incoming REST requests for user endpoints (`GET /api/users`, `GET /api/users/:id`, `POST /api/users`),
+ * performs request validation, invokes user service functions, and formats HTTP responses.
+ */
+
 import { Request, Response } from "express";
 import { CreateUserSchema, GetUserByIdSchema } from "./users.dto.js";
 import { getAllUsers, getUserById, createUser } from "./users.service.js";
 
 /**
- * Controller: Retrieves paginated user records from PostgreSQL database.
+ * Controller: Retrieves paginated user records from PostgreSQL database (`GET /api/users`).
+ * 
+ * QUERY PARAMS: `page`, `limit`, `query`, `searchBy`
  */
 export async function getAllUsersController(req: Request, res: Response) {
   try {
@@ -21,7 +32,9 @@ export async function getAllUsersController(req: Request, res: Response) {
 }
 
 /**
- * Controller: Fetches a single user by UUID param.
+ * Controller: Fetches a single user profile by UUID param (`GET /api/users/:id`).
+ * 
+ * PATH PARAM: `id` (User UUID)
  */
 export async function getUserByIdController(req: Request, res: Response) {
   try {
@@ -47,7 +60,9 @@ export async function getUserByIdController(req: Request, res: Response) {
 }
 
 /**
- * Controller: Creates a new user record in PostgreSQL.
+ * Controller: Creates a new user record in PostgreSQL (`POST /api/users`).
+ * 
+ * BODY: `{ name, email, role? }`
  */
 export async function createUserController(req: Request, res: Response) {
   try {
