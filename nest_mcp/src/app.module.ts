@@ -5,6 +5,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
+import { McpModule } from './modules/mcp/mcp.module';
 import { User } from './modules/users/entities/user.entity';
 import { Task } from './modules/tasks/entities/task.entity';
 import { UsersService } from './modules/users/users.service';
@@ -30,6 +31,7 @@ import { UsersService } from './modules/users/users.service';
     UsersModule,
     TasksModule,
     PermissionsModule,
+    McpModule,
   ],
 })
 export class AppModule implements OnModuleInit {
