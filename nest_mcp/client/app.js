@@ -258,10 +258,20 @@ function appendMessage(role, text, metadata = {}) {
     `;
   }
 
+  let authActionHtml = '';
+  if (text.includes('🔒 Authentication Required:')) {
+    authActionHtml = `
+      <div style="margin-top: 12px;">
+        <button class="btn btn-primary btn-sm chat-login-btn">🔑 Sign In to Execute Database Commands</button>
+      </div>
+    `;
+  }
+
   row.innerHTML = `
     <div class="msg-avatar">${avatarText}</div>
     <div class="msg-bubble">
       <div>${formatMarkdown(text)}</div>
+      ${authActionHtml}
       ${footerHtml}
     </div>
   `;
@@ -272,12 +282,6 @@ function appendMessage(role, text, metadata = {}) {
 
 async function sendMessage(messageText) {
   if (!messageText.trim() || state.isThinking) return;
-
-  if (!state.token) {
-    openLoginModal();
-    showToast('Please log in first to send chat messages & trigger MCP tools.', 'info');
-    return;
-  }
 
   // Clear input
   elements.messageInput.value = '';
@@ -292,23 +296,22 @@ async function sendMessage(messageText) {
   elements.sendBtn.disabled = true;
 
   try {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (state.token) {
+      headers['Authorization'] = `Bearer ${state.token}`;
+    }
+
     const res = await fetch('/api/v1/mcp/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${state.token}`,
-      },
+      headers,
       body: JSON.stringify({ message: messageText }),
     });
 
     const data = await res.json();
 
     if (!res.ok) {
-      if (res.status === 401) {
-        logout();
-        openLoginModal();
-        throw new Error('Session expired. Please log in again.');
-      }
       throw new Error(data.message || 'Chat request failed');
     }
 
@@ -408,11 +411,13 @@ function setupEventListeners() {
     showToast('Chat history cleared', 'info');
   });
 
-  // Prompt Chips
+  // Prompt Chips & Chat Login Button
   document.addEventListener('click', (e) => {
     if (e.target.classList.contains('prompt-chip')) {
       const promptText = e.target.textContent.trim();
       sendMessage(promptText);
+    } else if (e.target.classList.contains('chat-login-btn')) {
+      openLoginModal();
     }
   });
 }

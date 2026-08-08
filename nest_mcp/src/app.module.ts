@@ -4,10 +4,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { TasksModule } from './modules/tasks/tasks.module';
+import { CommentsModule } from './modules/comments/comments.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { McpModule } from './modules/mcp/mcp.module';
 import { User } from './modules/users/entities/user.entity';
 import { Task } from './modules/tasks/entities/task.entity';
+import { Comment } from './modules/comments/entities/comment.entity';
 import { UsersService } from './modules/users/users.service';
 
 @Module({
@@ -19,7 +21,7 @@ import { UsersService } from './modules/users/users.service';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
-        entities: [User, Task],
+        entities: [User, Task, Comment],
         migrations: ['dist/database/migrations/*.js'],
         migrationsTableName: 'typeorm_migrations',
         migrationsRun: true, // auto-run pending migrations on startup
@@ -30,6 +32,7 @@ import { UsersService } from './modules/users/users.service';
     AuthModule,
     UsersModule,
     TasksModule,
+    CommentsModule,
     PermissionsModule,
     McpModule,
   ],

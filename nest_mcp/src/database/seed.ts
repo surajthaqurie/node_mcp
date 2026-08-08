@@ -27,26 +27,46 @@ const MANAGER_PERMISSIONS: Permission[] = [
   Permission.TASK_CREATE,
   Permission.TASK_UPDATE,
   Permission.TASK_DELETE,
+  Permission.COMMENT_READ,
+  Permission.COMMENT_CREATE,
+  Permission.COMMENT_UPDATE,
+  Permission.COMMENT_DELETE,
   Permission.PERMISSION_MANAGE,
 ];
 
 // Different permission tiers for regular users
 const USER_PRESETS: Permission[][] = [
   // Tier 1 – read only
-  [Permission.TASK_READ],
+  [Permission.TASK_READ, Permission.COMMENT_READ],
 
-  // Tier 2 – task creator
-  [Permission.TASK_READ, Permission.TASK_CREATE],
+  // Tier 2 – task creator & commenter
+  [
+    Permission.TASK_READ,
+    Permission.TASK_CREATE,
+    Permission.COMMENT_READ,
+    Permission.COMMENT_CREATE,
+  ],
 
-  // Tier 3 – task editor
-  [Permission.TASK_READ, Permission.TASK_CREATE, Permission.TASK_UPDATE],
+  // Tier 3 – task editor & commenter
+  [
+    Permission.TASK_READ,
+    Permission.TASK_CREATE,
+    Permission.TASK_UPDATE,
+    Permission.COMMENT_READ,
+    Permission.COMMENT_CREATE,
+    Permission.COMMENT_UPDATE,
+  ],
 
-  // Tier 4 – full task access
+  // Tier 4 – full task & comment access
   [
     Permission.TASK_READ,
     Permission.TASK_CREATE,
     Permission.TASK_UPDATE,
     Permission.TASK_DELETE,
+    Permission.COMMENT_READ,
+    Permission.COMMENT_CREATE,
+    Permission.COMMENT_UPDATE,
+    Permission.COMMENT_DELETE,
   ],
 ];
 

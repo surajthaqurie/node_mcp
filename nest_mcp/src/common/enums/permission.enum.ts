@@ -11,6 +11,12 @@ export enum Permission {
   TASK_UPDATE = 'task:update',
   TASK_DELETE = 'task:delete',
 
+  // Comment permissions
+  COMMENT_READ = 'comment:read',
+  COMMENT_CREATE = 'comment:create',
+  COMMENT_UPDATE = 'comment:update',
+  COMMENT_DELETE = 'comment:delete',
+
   // Permission management
   PERMISSION_MANAGE = 'permission:manage',
 }

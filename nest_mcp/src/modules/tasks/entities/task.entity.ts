@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
+  OneToMany,
   JoinColumn,
 } from 'typeorm';
 import {
@@ -12,6 +13,7 @@ import {
   TaskPriority,
 } from '../../../common/enums/task-status.enum';
 import { User } from '../../users/entities/user.entity';
+import { Comment } from '../../comments/entities/comment.entity';
 
 @Entity('tasks')
 export class Task {
@@ -46,6 +48,9 @@ export class Task {
 
   @Column()
   createdById: string;
+
+  @OneToMany(() => Comment, (comment) => comment.task, { nullable: true })
+  comments: Comment[];
 
   @CreateDateColumn()
   createdAt: Date;

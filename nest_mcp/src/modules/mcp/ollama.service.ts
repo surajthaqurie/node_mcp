@@ -77,10 +77,19 @@ export class OllamaService implements OnModuleInit {
    * 7. Track usage and attach token summary header to response.
    *
    * @param message    The user's input message.
+  /**
+   * Processes a user message through the Ollama MCP tool-calling loop.
+   *
+   * @param message    The user's input message.
    * @param sessionKey Unique key for tracking session limits (e.g. userId or 'default').
+   * @param options    Options including isAuthenticated flag.
    * @returns Final response text from Ollama annotated with token usage stats.
    */
-  async chat(message: string, sessionKey = 'default'): Promise<string> {
+  async chat(
+    message: string,
+    sessionKey = 'default',
+    options: { isAuthenticated?: boolean } = {},
+  ): Promise<string> {
     // ── Token limit check ───────────────────────────────────────────────────
     const limitError = checkTokenLimit(sessionKey, message);
     if (limitError) {
@@ -97,7 +106,7 @@ export class OllamaService implements OnModuleInit {
     ];
 
     this.logger.debug(
-      `Starting Ollama chat with model "${this.model}", session "${sessionKey}", message: "${message}"`,
+      `Starting Ollama chat with model "${this.model}", session "${sessionKey}", authenticated: ${!!options.isAuthenticated}, message: "${message}"`,
     );
 
     let response: ChatResponse;
@@ -130,6 +139,29 @@ export class OllamaService implements OnModuleInit {
         );
       }
       throw new InternalServerErrorException(`Ollama request failed: ${msg}`);
+    }
+
+    // ── Check authentication before executing database tool calls ──────────
+    if (
+      response.message.tool_calls &&
+      response.message.tool_calls.length > 0 &&
+      !options.isAuthenticated
+    ) {
+      const toolNames = response.message.tool_calls
+        .map((c) => c.function.name)
+        .join(', ');
+      this.logger.warn(
+        `Unauthenticated user attempted to invoke database tool(s): ${toolNames}`,
+      );
+      const authMessage =
+        '🔒 Authentication Required: Accessing or querying database records (users, tasks, permissions) requires an active session. Please sign in to your account to execute database tools.';
+      const summary = trackUsage(sessionKey, message, authMessage);
+      return appendUsageHeader(
+        authMessage,
+        summary.usage.totalTokens,
+        summary.limit,
+        summary.remaining,
+      );
     }
 
     // ── MCP function-calling loop ────────────────────────────────────────────
@@ -178,7 +210,11 @@ export class OllamaService implements OnModuleInit {
     // ── Keyword intent fallback for small models ─────────────────────────────
     let finalText = response.message.content;
     if (!finalText || finalText.trim() === '') {
-      finalText = await this.keywordFallback(message, tools);
+      finalText = await this.keywordFallback(
+        message,
+        tools,
+        options.isAuthenticated,
+      );
     }
 
     // ── Record token usage and format output ─────────────────────────────────
@@ -223,6 +259,7 @@ export class OllamaService implements OnModuleInit {
   private async keywordFallback(
     message: string,
     tools: Record<string, IMcpTool>,
+    isAuthenticated = false,
   ): Promise<string> {
     const lower = message.toLowerCase();
 
@@ -241,6 +278,9 @@ export class OllamaService implements OnModuleInit {
     }
 
     if (toolName && tools[toolName]) {
+      if (!isAuthenticated) {
+        return '🔒 Authentication Required: Accessing or querying database records (users, tasks, permissions) requires an active session. Please sign in to your account to execute database tools.';
+      }
       this.logger.log(`Keyword fallback triggered for tool: "${toolName}"`);
       return this.executeTool(tools, toolName, args);
     }

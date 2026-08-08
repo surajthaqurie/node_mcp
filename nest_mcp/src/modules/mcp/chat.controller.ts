@@ -36,12 +36,14 @@ import {
 import { OllamaService } from './ollama.service';
 import { McpServerService } from './mcp-server.service';
 import { ChatRequestDto, ChatResponseDto } from './dto/chat.dto';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { User } from '../users/entities/user.entity';
 import { ConfigService } from '@nestjs/config';
 
 @ApiTags('MCP / AI Chat')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(OptionalJwtAuthGuard)
 @Controller('mcp')
 export class ChatController {
   private readonly logger = new Logger(ChatController.name);
@@ -59,7 +61,6 @@ export class ChatController {
    * Error responses:
    *  503 — Ollama is not running or the model is not pulled locally
    *  500 — Unexpected server-side failure
-   *  401 — Missing or invalid JWT token
    *  400 — Validation error on the request body
    */
   @Post('chat')
@@ -68,8 +69,7 @@ export class ChatController {
     summary: 'Chat with Ollama AI (MCP tool-calling enabled)',
     description:
       'Send a natural language message to the local Ollama LLM. ' +
-      'The AI can autonomously call registered MCP tools (list tasks, get users, create tasks, etc.) ' +
-      'and return a synthesized, human-readable response.',
+      'General questions do not require login. Accessing database tools requires a valid session.',
   })
   @ApiResponse({
     status: 200,
@@ -78,21 +78,27 @@ export class ChatController {
   })
   @ApiResponse({ status: 400, description: 'Invalid request body' })
   @ApiResponse({
-    status: 401,
-    description: 'Unauthorized — valid JWT required',
-  })
-  @ApiResponse({
     status: 503,
     description:
       'Ollama is not running or the requested model is not pulled locally',
   })
   @ApiResponse({ status: 500, description: 'Unexpected server error' })
-  async chat(@Body() dto: ChatRequestDto): Promise<ChatResponseDto> {
+  async chat(
+    @Body() dto: ChatRequestDto,
+    @CurrentUser() user: User | null,
+  ): Promise<ChatResponseDto> {
     const startTime = Date.now();
-    this.logger.log(`Chat request received: "${dto.message}"`);
+    const sessionKey = user?.id || 'guest';
+    const isAuthenticated = !!user;
+
+    this.logger.log(
+      `Chat request received [user: ${user?.email || 'guest'}]: "${dto.message}"`,
+    );
 
     try {
-      const response = await this.ollamaService.chat(dto.message);
+      const response = await this.ollamaService.chat(dto.message, sessionKey, {
+        isAuthenticated,
+      });
       const processingTimeMs = Date.now() - startTime;
 
       this.logger.log(`Chat response generated in ${processingTimeMs}ms`);
