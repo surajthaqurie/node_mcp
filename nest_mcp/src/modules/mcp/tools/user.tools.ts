@@ -55,10 +55,15 @@ export class UserToolsProvider {
       {
         name: 'list_users',
         description:
-          'List all registered users in the system (paginated). Default: page 1, 10 items per page. Returns id, email, firstName, lastName, role, isActive, and createdAt.',
+          'List all registered users in the system (paginated). Default: page 1, 10 items per page. Can filter by role, active status, or search by name/email.',
         inputSchema: {
           type: 'object',
           properties: {
+            search: {
+              type: 'string',
+              description:
+                'Optional: search users by name or email (case-insensitive)',
+            },
             role: {
               type: 'string',
               enum: Object.values(Role),
@@ -85,16 +90,18 @@ export class UserToolsProvider {
           if (permError)
             return { content: [{ type: 'text', text: permError }] };
 
-          const page = Number(args.page) || 1;
-          const limit = Number(args.limit) || 10;
+          const page = Math.max(Number(args.page) || 1, 1);
+          const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
           const role = args.role as Role | undefined;
           const activeOnly = args.activeOnly as boolean | undefined;
+          const search = args.search as string | undefined;
 
           const result = await this.usersService.findAll({
             page,
             limit,
             role,
             activeOnly,
+            search,
           });
 
           const { data, meta } = result;
@@ -117,12 +124,19 @@ export class UserToolsProvider {
             )
             .join('\n---\n');
 
-          let footer = `\n\n📌 Page ${meta.page} of ${meta.totalPages} (Showing ${data.length} of ${meta.totalItems} total users)`;
-          if (meta.hasNextPage) {
-            footer += `\n💡 More items available. Ask to "show page ${meta.page + 1} of users" to see more.`;
+          let banner = '';
+          if (meta.totalItems > meta.limit) {
+            banner = `⚡ **Paginated View** (Database contains ${meta.totalItems} total users. Displaying ${data.length} items on Page ${meta.page} for optimal performance):\n\n`;
           }
 
-          return { content: [{ type: 'text', text: itemsText + footer }] };
+          let footer = `\n\n📌 Page ${meta.page} of ${meta.totalPages} (Showing ${data.length} of ${meta.totalItems} total users)`;
+          if (meta.hasNextPage) {
+            footer += `\n💡 **Navigation Options**: Ask to "show page ${meta.page + 1} of users" or filter by role/name to narrow results.`;
+          }
+
+          return {
+            content: [{ type: 'text', text: banner + itemsText + footer }],
+          };
         },
       },
 

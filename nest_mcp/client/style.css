@@ -647,6 +647,17 @@ kbd {
   transform: translateY(-1px);
 }
 
+.btn-danger {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
 .btn-secondary {
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);

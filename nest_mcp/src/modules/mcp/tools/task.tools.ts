@@ -63,19 +63,23 @@ export class TaskToolsProvider {
         inputSchema: {
           type: 'object',
           properties: {
-            status: {
-              type: 'string',
-              enum: Object.values(TaskStatus),
-              description:
-                'Optional: filter tasks by status (todo, in_progress, done, cancelled)',
-            },
             page: {
               type: 'number',
-              description: 'Optional: page number (default: 1)',
+              description: 'Page number for pagination (default: 1)',
             },
             limit: {
               type: 'number',
-              description: 'Optional: items per page (default: 10)',
+              description:
+                'Items per page (default: 10, max: 50). Values exceeding 50 are automatically capped at 50 for safety.',
+            },
+            status: {
+              type: 'string',
+              enum: Object.values(TaskStatus),
+              description: 'Filter tasks by status',
+            },
+            search: {
+              type: 'string',
+              description: 'Filter tasks by title search term',
             },
           },
           required: [],
@@ -86,14 +90,16 @@ export class TaskToolsProvider {
             return { content: [{ type: 'text', text: permError }] };
 
           const currentUser = user as User;
-          const page = Number(args.page) || 1;
-          const limit = Number(args.limit) || 10;
+          const page = Math.max(Number(args.page) || 1, 1);
+          const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 50);
           const status = args.status as TaskStatus | undefined;
+          const search = args.search as string | undefined;
 
           const result = await this.tasksService.findAll(currentUser, {
             page,
             limit,
             status,
+            search,
           });
 
           const { data, meta } = result;
@@ -116,12 +122,19 @@ export class TaskToolsProvider {
             )
             .join('\n---\n');
 
-          let footer = `\n\n📌 Page ${meta.page} of ${meta.totalPages} (Showing ${data.length} of ${meta.totalItems} total tasks)`;
-          if (meta.hasNextPage) {
-            footer += `\n💡 More items available. Ask to "show page ${meta.page + 1} of tasks" to see more.`;
+          let banner = '';
+          if (meta.totalItems > meta.limit) {
+            banner = `⚡ **Paginated View** (Database contains ${meta.totalItems} total tasks. Displaying ${data.length} items on Page ${meta.page} for optimal performance):\n\n`;
           }
 
-          return { content: [{ type: 'text', text: itemsText + footer }] };
+          let footer = `\n\n📌 Page ${meta.page} of ${meta.totalPages} (Showing ${data.length} of ${meta.totalItems} total tasks)`;
+          if (meta.hasNextPage) {
+            footer += `\n💡 **Navigation Options**: Ask to "show page ${meta.page + 1} of tasks" or filter by status to narrow results.`;
+          }
+
+          return {
+            content: [{ type: 'text', text: banner + itemsText + footer }],
+          };
         },
       },
 

@@ -10,11 +10,8 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { User } from '../users/entities/user.entity';
 import { Role } from '../../common/enums/role.enum';
-import { TaskStatus } from '../../common/enums/task-status.enum';
-import {
-  PaginationQueryDto,
-  PaginatedResponse,
-} from '../../common/dto/pagination.dto';
+import { TaskQueryDto } from './dto/task-query.dto';
+import { PaginatedResponse } from '../../common/dto/pagination.dto';
 import { createPaginatedResponse } from '../../common/utils/pagination.util';
 
 @Injectable()
@@ -34,7 +31,7 @@ export class TasksService {
 
   async findAll(
     currentUser: User,
-    query?: PaginationQueryDto & { status?: TaskStatus },
+    query?: TaskQueryDto,
   ): Promise<PaginatedResponse<Task>> {
     const page = query?.page ?? 1;
     const limit = query?.limit ?? 10;
@@ -55,6 +52,12 @@ export class TasksService {
 
     if (query?.status) {
       qb.andWhere('task.status = :status', { status: query.status });
+    }
+
+    if (query?.search) {
+      qb.andWhere('LOWER(task.title) LIKE LOWER(:search)', {
+        search: `%${query.search}%`,
+      });
     }
 
     qb.skip(skip).take(limit);
@@ -110,7 +113,7 @@ export class TasksService {
 
   async getMyTasks(
     currentUser: User,
-    query?: PaginationQueryDto,
+    query?: TaskQueryDto,
   ): Promise<PaginatedResponse<Task>> {
     const page = query?.page ?? 1;
     const limit = query?.limit ?? 10;
@@ -123,9 +126,19 @@ export class TasksService {
       .where('(task.createdById = :id OR task.assigneeId = :id)', {
         id: currentUser.id,
       })
-      .orderBy('task.createdAt', 'DESC')
-      .skip(skip)
-      .take(limit);
+      .orderBy('task.createdAt', 'DESC');
+
+    if (query?.status) {
+      qb.andWhere('task.status = :status', { status: query.status });
+    }
+
+    if (query?.search) {
+      qb.andWhere('LOWER(task.title) LIKE LOWER(:search)', {
+        search: `%${query.search}%`,
+      });
+    }
+
+    qb.skip(skip).take(limit);
 
     const [data, totalItems] = await qb.getManyAndCount();
     return createPaginatedResponse(data, totalItems, page, limit);

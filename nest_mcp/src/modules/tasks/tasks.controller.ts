@@ -20,7 +20,7 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { Permission } from '../../common/enums/permission.enum';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../users/entities/user.entity';
-import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { TaskQueryDto } from './dto/task-query.dto';
 
 @ApiTags('Tasks')
 @ApiBearerAuth()
@@ -39,7 +39,7 @@ export class TasksController {
   @Get()
   @RequirePermissions(Permission.TASK_READ)
   @ApiOperation({ summary: 'Get all tasks (paginated & role-filtered)' })
-  findAll(@Query() query: PaginationQueryDto, @CurrentUser() user: User) {
+  findAll(@Query() query: TaskQueryDto, @CurrentUser() user: User) {
     return this.tasksService.findAll(user, query);
   }
 
@@ -47,7 +47,7 @@ export class TasksController {
   @ApiOperation({
     summary: 'Get tasks assigned to or created by me (paginated)',
   })
-  getMyTasks(@Query() query: PaginationQueryDto, @CurrentUser() user: User) {
+  getMyTasks(@Query() query: TaskQueryDto, @CurrentUser() user: User) {
     return this.tasksService.getMyTasks(user, query);
   }
 

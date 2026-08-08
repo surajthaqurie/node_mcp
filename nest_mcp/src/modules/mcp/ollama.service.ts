@@ -33,6 +33,12 @@ import {
   checkTokenLimit,
   trackUsage,
   appendUsageHeader,
+  McpSessionState,
+  isCreationIntent,
+  isConfirmationIntent,
+  extractUserParams,
+  extractTaskParams,
+  extractSearchQuery,
 } from './utils/index';
 
 @Injectable()
@@ -40,6 +46,7 @@ export class OllamaService implements OnModuleInit {
   private readonly logger = new Logger(OllamaService.name);
   private ollamaClient: Ollama;
   private model: string;
+  private readonly sessionState = new McpSessionState();
 
   constructor(
     private readonly configService: ConfigService,
@@ -110,6 +117,27 @@ export class OllamaService implements OnModuleInit {
     }
 
     const tools = this.mcpServerService.getTools();
+
+    // ── Fast-path Keyword Fallback for Obvious Tool Requests ─────────────────
+    const fastPathText = await this.keywordFallback(
+      message,
+      tools,
+      options.isAuthenticated,
+      options.user,
+    );
+    if (
+      fastPathText &&
+      !fastPathText.startsWith('I am here to help! Please ask a question')
+    ) {
+      const summary = trackUsage(sessionKey, message, fastPathText);
+      return appendUsageHeader(
+        fastPathText,
+        summary.usage.totalTokens,
+        summary.limit,
+        summary.remaining,
+      );
+    }
+
     const ollamaTools = buildOllamaTools(tools);
     const systemPrompt = buildSystemPrompt(tools);
 
@@ -227,13 +255,23 @@ export class OllamaService implements OnModuleInit {
 
     // ── Keyword intent fallback for small models ─────────────────────────────
     let finalText = response.message.content;
-    if (!finalText || finalText.trim() === '') {
-      finalText = await this.keywordFallback(
+
+    // If Ollama didn't execute any tools (iterations === 0), run keyword fallback
+    // to ensure intent-based actions (creation, pagination, query tools) execute reliably!
+    if (iterations === 0) {
+      const fallbackText = await this.keywordFallback(
         message,
         tools,
         options.isAuthenticated,
         options.user,
       );
+      if (
+        fallbackText &&
+        fallbackText !==
+          'I am here to help! Please ask a question or specify an action for tasks, users, or comments.'
+      ) {
+        finalText = fallbackText;
+      }
     }
 
     // ── Re-verification check for ambiguous LLM responses ───────────────────
@@ -388,6 +426,7 @@ export class OllamaService implements OnModuleInit {
     }
 
     try {
+      this.sessionState.trackListOperation(toolName, Number(args.page) || 1);
       const result = await tools[toolName].handler(args, user);
       return result.content.map((c) => c.text).join('\n');
     } catch (err: unknown) {
@@ -459,25 +498,116 @@ export class OllamaService implements OnModuleInit {
     let toolName: string | null = null;
     const args: Record<string, unknown> = {};
 
-    if (
-      (lower.includes('user') || lower.includes('users')) &&
-      lower.includes('stat')
-    ) {
-      toolName = 'get_user_stats';
-    } else if (lower.includes('user') || lower.includes('users')) {
-      toolName = 'list_users';
-    } else if (lower.includes('task') || lower.includes('tasks')) {
-      toolName = 'list_tasks';
-    } else if (lower.includes('comment') || lower.includes('comments')) {
-      toolName = 'list_comments';
+    // ── Relative Page Navigation ("next", "next page", "prev", "previous") ───
+    const isNext =
+      lower === 'next' ||
+      lower === 'next page' ||
+      lower === 'next p' ||
+      lower === 'n';
+    const isPrev =
+      lower === 'prev' ||
+      lower === 'previous' ||
+      lower === 'prev page' ||
+      lower === 'previous page' ||
+      lower === 'p';
+
+    if (isNext) {
+      this.sessionState.setPage(this.sessionState.getPage() + 1);
+      args.page = this.sessionState.getPage();
+      toolName = this.sessionState.getListTool();
+    } else if (isPrev) {
+      this.sessionState.setPage(this.sessionState.getPage() - 1);
+      args.page = this.sessionState.getPage();
+      toolName = this.sessionState.getListTool();
+    }
+
+    // ── Extract Page and Limit Parameters ─────────────────────────────────────
+    const pageMatch = lower.match(/(?:page|p)\s*=?\s*(\d+)/i);
+    if (pageMatch && pageMatch[1]) {
+      args.page = Number(pageMatch[1]);
+    }
+
+    const limitMatch = lower.match(
+      /(?:limit|count|size|per page)\s*=?\s*(\d+)/i,
+    );
+    if (limitMatch && limitMatch[1]) {
+      args.limit = Number(limitMatch[1]);
+    }
+
+    // ── Check Intent via IntentParser Utility ─────────────────────────────────
+    const isCreation = isCreationIntent(lower);
+    const isConfirm = isConfirmationIntent(lower);
+    const pendingTool = this.sessionState.getPendingTool();
+
+    if (isCreation) {
+      if (lower.includes('task') || lower.includes('tasks')) {
+        toolName = 'create_task';
+        Object.assign(args, extractTaskParams(message, args));
+        if (isConfirm) args.confirm = true;
+      } else if (lower.includes('user') || lower.includes('users')) {
+        toolName = 'create_user';
+        Object.assign(args, extractUserParams(message, args));
+        if (isConfirm) args.confirm = true;
+      } else if (lower.includes('comment') || lower.includes('comments')) {
+        toolName = 'create_comment';
+        if (isConfirm) args.confirm = true;
+      }
+    } else if (pendingTool) {
+      // Continuation of a pending creation request
+      toolName = pendingTool;
+      if (toolName === 'create_user') {
+        Object.assign(
+          args,
+          this.sessionState.getPendingArgs(),
+          extractUserParams(message, {}),
+        );
+      } else if (toolName === 'create_task') {
+        Object.assign(
+          args,
+          this.sessionState.getPendingArgs(),
+          extractTaskParams(message, {}),
+        );
+      }
+      if (isConfirm) args.confirm = true;
+    }
+
+    // ── Tool Selection for Queries ────────────────────────────────────────────
+    if (!toolName) {
+      if (
+        (lower.includes('user') || lower.includes('users')) &&
+        lower.includes('stat')
+      ) {
+        toolName = 'get_user_stats';
+      } else if (
+        lower.includes('user') ||
+        lower.includes('users') ||
+        (args.page !== undefined &&
+          !lower.includes('task') &&
+          !lower.includes('comment'))
+      ) {
+        toolName = 'list_users';
+        const search = extractSearchQuery(message);
+        if (search) args.search = search;
+      } else if (lower.includes('task') || lower.includes('tasks')) {
+        toolName = 'list_tasks';
+        const search = extractSearchQuery(message);
+        if (search) args.search = search;
+      } else if (lower.includes('comment') || lower.includes('comments')) {
+        toolName = 'list_comments';
+      }
     }
 
     if (toolName && tools[toolName]) {
       if (!isAuthenticated) {
         return '🔒 Authentication Required: Accessing or querying database records (users, tasks, permissions) requires an active session. Please sign in to your account to execute database tools.';
       }
-      this.logger.log(`Keyword fallback triggered for tool: "${toolName}"`);
-      return this.executeTool(tools, toolName, args, user);
+      this.logger.log(
+        `Keyword fallback triggered for tool: "${toolName}", args: ${JSON.stringify(args)}`,
+      );
+
+      const resultText = await this.executeTool(tools, toolName, args, user);
+      this.sessionState.handleToolOutcome(toolName, args, resultText);
+      return resultText;
     }
 
     return 'I am here to help! Please ask a question or specify an action for tasks, users, or comments.';

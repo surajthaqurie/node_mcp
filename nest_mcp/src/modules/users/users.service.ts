@@ -37,7 +37,11 @@ export class UsersService {
   }
 
   async findAll(
-    query?: PaginationQueryDto & { role?: Role; activeOnly?: boolean },
+    query?: PaginationQueryDto & {
+      role?: Role;
+      activeOnly?: boolean;
+      search?: string;
+    },
   ): Promise<PaginatedResponse<User>> {
     const page = query?.page ?? 1;
     const limit = query?.limit ?? 10;
@@ -62,6 +66,12 @@ export class UsersService {
     }
     if (query?.activeOnly === true) {
       qb.andWhere('user.isActive = :isActive', { isActive: true });
+    }
+    if (query?.search && query.search.trim() !== '') {
+      qb.andWhere(
+        '(LOWER(user.firstName) LIKE :search OR LOWER(user.lastName) LIKE :search OR LOWER(user.email) LIKE :search)',
+        { search: `%${query.search.trim().toLowerCase()}%` },
+      );
     }
 
     qb.skip(skip).take(limit);

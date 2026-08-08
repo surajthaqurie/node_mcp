@@ -10,6 +10,12 @@ const state = {
   tools: [],
   messages: [],
   isThinking: false,
+  promptHistory: JSON.parse(
+    localStorage.getItem('nest_mcp_prompt_history') || '[]',
+  ),
+  historyIndex: -1,
+  currentDraft: '',
+  activeAbortController: null,
 };
 
 // ─── DOM Element References ──────────────────────────────────────────────────
@@ -40,6 +46,7 @@ const elements = {
   chatForm: document.getElementById('chatForm'),
   messageInput: document.getElementById('messageInput'),
   sendBtn: document.getElementById('sendBtn'),
+  stopBtn: document.getElementById('stopBtn'),
   clearChatBtn: document.getElementById('clearChatBtn'),
   typingIndicator: document.getElementById('typingIndicator'),
   authNotice: document.getElementById('authNotice'),
@@ -289,12 +296,26 @@ function appendMessage(role, text, metadata = {}) {
       buttons.push('<button class="btn btn-primary btn-sm chat-action-chip" data-prompt="Confirm creation with confirm: true">✅ Confirm Creation</button>');
     }
 
-    // Interactive Pagination Button
-    const nextPageMatch = text.match(/Ask to ["']?show page (\d+) of (\w+)["']?/i);
-    if (nextPageMatch) {
-      const pageNum = nextPageMatch[1];
-      const category = nextPageMatch[2];
-      buttons.push(`<button class="btn btn-secondary btn-sm chat-action-chip" data-prompt="show page ${pageNum} of ${category}">➡️ View Page ${pageNum} of ${category}</button>`);
+    // Interactive Pagination Buttons (Previous & Next Page)
+    const pageInfoMatch = text.match(/📌 Page (\d+) of (\d+)/i);
+    const categoryMatch = text.match(/\b(users|tasks|comments)\b/i);
+    if (pageInfoMatch) {
+      const currentPage = parseInt(pageInfoMatch[1], 10);
+      const totalPages = parseInt(pageInfoMatch[2], 10);
+      const category = categoryMatch
+        ? categoryMatch[1].toLowerCase()
+        : 'users';
+
+      if (currentPage > 1) {
+        buttons.push(
+          `<button class="btn btn-secondary btn-sm chat-action-chip" data-prompt="show page ${currentPage - 1} of ${category}">◀ Previous Page (${currentPage - 1})</button>`,
+        );
+      }
+      if (currentPage < totalPages) {
+        buttons.push(
+          `<button class="btn btn-primary btn-sm chat-action-chip" data-prompt="show page ${currentPage + 1} of ${category}">▶ Next Page (${currentPage + 1})</button>`,
+        );
+      }
     }
 
     if (buttons.length > 0) {
@@ -322,17 +343,38 @@ function appendMessage(role, text, metadata = {}) {
 async function sendMessage(messageText) {
   if (!messageText.trim() || state.isThinking) return;
 
+  const trimmedPrompt = messageText.trim();
+
+  // Save prompt to history in LocalStorage
+  if (
+    state.promptHistory.length === 0 ||
+    state.promptHistory[state.promptHistory.length - 1] !== trimmedPrompt
+  ) {
+    state.promptHistory.push(trimmedPrompt);
+    if (state.promptHistory.length > 50) state.promptHistory.shift();
+    localStorage.setItem(
+      'nest_mcp_prompt_history',
+      JSON.stringify(state.promptHistory),
+    );
+  }
+
+  // Reset history navigation index
+  state.historyIndex = -1;
+  state.currentDraft = '';
+
   // Clear input
   elements.messageInput.value = '';
   elements.messageInput.style.height = 'auto';
 
   // Add User message
-  appendMessage('user', messageText);
+  appendMessage('user', trimmedPrompt);
 
-  // Set typing indicator
+  // Set typing & stop button state
   state.isThinking = true;
+  state.activeAbortController = new AbortController();
   elements.typingIndicator.classList.remove('hidden');
-  elements.sendBtn.disabled = true;
+  elements.sendBtn.classList.add('hidden');
+  elements.stopBtn.classList.remove('hidden');
 
   try {
     const headers = {
@@ -345,7 +387,8 @@ async function sendMessage(messageText) {
     const res = await fetch('/api/v1/mcp/chat', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ message: messageText }),
+      body: JSON.stringify({ message: trimmedPrompt }),
+      signal: state.activeAbortController.signal,
     });
 
     let data;
@@ -353,7 +396,11 @@ async function sendMessage(messageText) {
     try {
       data = JSON.parse(responseText);
     } catch {
-      data = { message: responseText || `HTTP ${res.status}: ${res.statusText || 'Server Error'}` };
+      data = {
+        message:
+          responseText ||
+          `HTTP ${res.status}: ${res.statusText || 'Server Error'}`,
+      };
     }
 
     if (!res.ok) {
@@ -379,12 +426,19 @@ async function sendMessage(messageText) {
       model: data.model,
     });
   } catch (err) {
-    appendMessage('ai', `⚠️ **Error:** ${err.message}`);
-    showToast(err.message, 'error');
+    if (err.name === 'AbortError') {
+      appendMessage('ai', '⏹️ *Response generation was stopped.*');
+      showToast('Generation stopped', 'info');
+    } else {
+      appendMessage('ai', `⚠️ **Error:** ${err.message}`);
+      showToast(err.message, 'error');
+    }
   } finally {
     state.isThinking = false;
+    state.activeAbortController = null;
     elements.typingIndicator.classList.add('hidden');
-    elements.sendBtn.disabled = false;
+    elements.stopBtn.classList.add('hidden');
+    elements.sendBtn.classList.remove('hidden');
   }
 }
 
@@ -429,17 +483,62 @@ function setupEventListeners() {
     });
   });
 
-  // Chat Form Submit
+  // Chat Form Submit & Stop
   elements.chatForm.addEventListener('submit', (e) => {
     e.preventDefault();
     sendMessage(elements.messageInput.value);
   });
 
-  // Textarea enter key handling & auto-height
+  elements.stopBtn.addEventListener('click', () => {
+    if (state.activeAbortController) {
+      state.activeAbortController.abort();
+    }
+  });
+
+  // Textarea enter key handling, arrow keys for prompt history & auto-height
   elements.messageInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       elements.chatForm.dispatchEvent(new Event('submit'));
+    } else if (e.key === 'ArrowUp') {
+      const cursorAtStart =
+        elements.messageInput.selectionStart === 0 &&
+        elements.messageInput.selectionEnd === 0;
+      if (cursorAtStart && state.promptHistory.length > 0) {
+        e.preventDefault();
+        if (state.historyIndex === -1) {
+          state.currentDraft = elements.messageInput.value;
+        }
+        if (state.historyIndex < state.promptHistory.length - 1) {
+          state.historyIndex++;
+          const targetPrompt =
+            state.promptHistory[
+              state.promptHistory.length - 1 - state.historyIndex
+            ];
+          elements.messageInput.value = targetPrompt;
+          elements.messageInput.style.height = 'auto';
+          elements.messageInput.style.height = `${Math.min(elements.messageInput.scrollHeight, 140)}px`;
+        }
+      }
+    } else if (e.key === 'ArrowDown') {
+      const cursorAtEnd =
+        elements.messageInput.selectionStart ===
+        elements.messageInput.value.length;
+      if (cursorAtEnd && state.historyIndex >= 0) {
+        e.preventDefault();
+        state.historyIndex--;
+        if (state.historyIndex === -1) {
+          elements.messageInput.value = state.currentDraft;
+        } else {
+          const targetPrompt =
+            state.promptHistory[
+              state.promptHistory.length - 1 - state.historyIndex
+            ];
+          elements.messageInput.value = targetPrompt;
+        }
+        elements.messageInput.style.height = 'auto';
+        elements.messageInput.style.height = `${Math.min(elements.messageInput.scrollHeight, 140)}px`;
+      }
     }
   });
 

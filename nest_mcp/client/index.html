@@ -139,9 +139,14 @@
                   <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                 </svg>
               </button>
+              <button type="button" id="stopBtn" class="btn btn-danger btn-send hidden" title="Stop response generation">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                </svg>
+              </button>
             </form>
             <div class="input-footer">
-              <span>Press <kbd>Enter</kbd> to send, <kbd>Shift + Enter</kbd> for new line</span>
+              <span>Press <kbd>Enter</kbd> to send, <kbd>Shift + Enter</kbd> for line break, <kbd>↑ / ↓</kbd> for history</span>
               <span id="typingIndicator" class="typing-indicator hidden">
                 <span class="pulse-dot"></span> Ollama is generating response...
               </span>
